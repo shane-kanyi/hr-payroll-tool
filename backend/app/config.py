@@ -18,6 +18,13 @@ class BaseConfig:
     # Payroll defaults - full rationale documented in docs/PAYROLL.md (Phase 4)
     SOCIAL_SECURITY_RATE = float(os.environ.get("SOCIAL_SECURITY_RATE", "0.06"))
 
+    # Leave engine defaults - full rationale documented in docs/LEAVE.md (Phase 3)
+    ANNUAL_LEAVE_DAYS_PER_YEAR = float(os.environ.get("ANNUAL_LEAVE_DAYS_PER_YEAR", "21"))
+    SICK_LEAVE_DAYS_PER_YEAR = float(os.environ.get("SICK_LEAVE_DAYS_PER_YEAR", "10"))
+    LEAVE_MIN_NOTICE_BUSINESS_DAYS = int(os.environ.get("LEAVE_MIN_NOTICE_BUSINESS_DAYS", "3"))
+    LEAVE_ESCALATION_THRESHOLD_DAYS = int(os.environ.get("LEAVE_ESCALATION_THRESHOLD_DAYS", "3"))
+    LEAVE_TEAM_MIN_COVERAGE_RATIO = float(os.environ.get("LEAVE_TEAM_MIN_COVERAGE_RATIO", "0.5"))
+
 
 class DevelopmentConfig(BaseConfig):
     DEBUG = True

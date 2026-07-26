@@ -42,6 +42,12 @@ class EmployeeRepository:
         )
         return items, total
 
+    def get_by_team(self, team_id: int, active_only: bool = True) -> list[Employee]:
+        query = self.session.query(Employee).filter(Employee.team_id == team_id)
+        if active_only:
+            query = query.filter(Employee.is_active.is_(True))
+        return query.order_by(Employee.name).all()
+
     def get_direct_reports(self, employee_id: int, active_only: bool = True) -> list[Employee]:
         query = self.session.query(Employee).filter(Employee.manager_id == employee_id)
         if active_only:

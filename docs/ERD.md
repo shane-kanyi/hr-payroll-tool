@@ -22,3 +22,8 @@ users (1) ──< audit_logs (actor_user_id, nullable)
   (end_date >= start_date, non-negative salary). Rules needing other rows
   (leave overlap, balance sufficiency, self-approval) belong in the
   service layer — Phase 3.
+- `leave_requests.escalated_at` (added in Phase 3, migration
+  `630b8660218e`) is nullable and set once by the escalation sweep; it's a
+  one-way flag, never cleared. See `docs/LEAVE.md` for the full escalation
+  rule and why it exists alongside `decided_by_id`/`decided_at` rather than
+  replacing them.

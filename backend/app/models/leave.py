@@ -44,6 +44,11 @@ class LeaveRequest(db.Model, TimestampMixin):
     decided_at = db.Column(db.DateTime(timezone=True), nullable=True)
     decision_notes = db.Column(db.Text, nullable=True)
 
+    # Set once a PENDING request has sat unresolved past the escalation
+    # threshold. From that point on the requester's skip-level manager may
+    # also decide it, in addition to their direct manager. See LeaveService.
+    escalated_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
     employee = db.relationship(
         "Employee", back_populates="leave_requests", foreign_keys=[employee_id]
     )

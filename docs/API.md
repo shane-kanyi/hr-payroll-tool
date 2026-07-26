@@ -65,3 +65,53 @@ optional on update (partial patch semantics), required on create except
 - Deactivating an employee who still manages active reports → `409` with
   `blocking_reports: [id, ...]` listing who needs reassigning first.
 - Deactivating/reactivating something already in that state → `409`.
+
+## Leave Requests
+
+Full rules and assumptions: `docs/LEAVE.md`. Auth isn't wired up yet
+(Phase 6), so `acting_manager_id` / `actor_employee_id` are passed
+explicitly in request bodies as an interim stand-in for a real caller
+identity.
+
+| Method | Path | Body | Notes |
+|---|---|---|---|
+| GET | `/api/leave-requests` | — | Filters: `employee_id`, `manager_id`, `status`, `escalated_only`, `page`, `per_page` |
+| POST | `/api/leave-requests` | see below | Submit a request |
+| GET | `/api/leave-requests/<id>` | — | 404 if not found |
+| POST | `/api/leave-requests/<id>/approve` | `{"acting_manager_id": int, "notes"?: str}` | See safeguards |
+| POST | `/api/leave-requests/<id>/reject` | `{"acting_manager_id": int, "notes"?: str}` | |
+| POST | `/api/leave-requests/<id>/cancel` | `{"actor_employee_id": int}` | Only the requester, only while `pending` |
+| GET | `/api/leave-requests/pending-approvals?manager_id=<id>` | — | Direct reports' pending requests + escalated skip-level requests |
+| GET | `/api/leave-requests/on-leave?date=YYYY-MM-DD` | — | Who's approved-on-leave on a given date (default today) |
+| GET | `/api/leave-requests/balances?employee_id=<id>&year=<yyyy>` | — | Auto-provisions ANNUAL/SICK balances for that year if missing |
+| POST | `/api/leave-requests/escalate` | — | Runs the escalation sweep now (cron/manual trigger; no scheduler yet) |
+
+### Submit body
+
+```json
+{
+  "employee_id": 3,
+  "leave_type": "annual",
+  "start_date": "2026-08-10",
+  "end_date": "2026-08-14",
+  "reason": "Family trip"
+}
+```
+
+`leave_type` is one of `annual`, `sick`, `unpaid`. `days_requested` is
+computed server-side (business days, inclusive) — not accepted as input.
+
+### Business-rule error responses worth knowing about
+
+- Overlapping an existing pending/approved request for the same employee →
+  `409` with `conflicting_request_ids: [id, ...]`.
+- Annual leave submitted with less than the minimum notice → `400`.
+- Insufficient ANNUAL/SICK balance at submission *or* approval time → `400`.
+- A request spanning a calendar-year boundary → `400` (split into two).
+- Approving/rejecting your own request → `403`.
+- Approving/rejecting without authority over the request (not the manager,
+  and not an escalated skip-level manager) → `403`.
+- Approving something that would drop team coverage below 50% → `409` with
+  `team_size` / `available_after`.
+- Acting on a request that's already been decided → `409`.
+- Cancelling someone else's request, or a non-pending one → `403` / `409`.

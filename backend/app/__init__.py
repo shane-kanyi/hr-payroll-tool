@@ -37,6 +37,9 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.api.employees import employees_bp
     app.register_blueprint(employees_bp)
 
+    from app.api.leave import leave_bp
+    app.register_blueprint(leave_bp)
+
     _register_error_handlers(app)
 
     return app

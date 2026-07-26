@@ -24,10 +24,18 @@ This repository is currently scaffolded. It includes:
 Employee management is functional end-to-end: teams and employees CRUD,
 soft-delete (deactivate/reactivate), org hierarchy view, and two real
 business-rule safeguards (circular reporting chains, deactivating a
-manager who still has active reports). 47 tests passing, 96% coverage on
-`app/`. Leave and payroll are next — no endpoints for either yet.
+manager who still has active reports).
 
-See `docs/ERD.md` for the schema and `docs/API.md` for endpoint details.
+Leave management is also functional end-to-end: submit/approve/reject/
+cancel, overlap detection, prorated balance provisioning and validation,
+minimum notice period, team-coverage safeguard on approval, and a
+pending-vs-escalated (skip-level manager) resolution path — plus the
+`get_unpaid_leave_days_for_period` helper the payroll engine will consume
+next phase. 106 tests passing, 96% coverage on `app/`. Payroll is next —
+no endpoints yet.
+
+See `docs/ERD.md` for the schema, `docs/API.md` for endpoint details, and
+`docs/LEAVE.md` for the leave business rules and assumptions.
 
 ## Requirements
 
@@ -74,12 +82,12 @@ pytest
 hr-payroll-tool/
 ├── backend/
 │   ├── app/
-│   │   ├── api/              # health, teams, employees blueprints
+│   │   ├── api/              # health, teams, employees, leave blueprints
 │   │   ├── models/           # team, employee, role, user, leave, payroll, audit_log
-│   │   ├── repositories/     # team_repository, employee_repository
-│   │   ├── services/         # team_service, employee_service (business rules)
-│   │   ├── schemas/          # team_schema, employee_schema (marshmallow)
-│   │   ├── utils/            # errors.py (AppError hierarchy)
+│   │   ├── repositories/     # team, employee, leave_request, leave_balance
+│   │   ├── services/         # team_service, employee_service, leave_service (business rules)
+│   │   ├── schemas/          # team, employee, leave (marshmallow)
+│   │   ├── utils/            # errors.py (AppError hierarchy), dates.py (business-day math)
 │   │   ├── __init__.py       # create_app() factory + error handlers
 │   │   ├── config.py
 │   │   └── extensions.py
@@ -89,7 +97,9 @@ hr-payroll-tool/
 │   │   ├── test_health.py
 │   │   ├── test_models.py
 │   │   ├── test_employee_service.py
-│   │   └── test_employees_api.py
+│   │   ├── test_employees_api.py
+│   │   ├── test_leave_service.py
+│   │   └── test_leave_api.py
 │   ├── wsgi.py
 │   ├── requirements.txt
 │   └── Dockerfile
@@ -146,3 +156,16 @@ hr-payroll-tool/
   in the same class body, crashing at import time with `'function' object
   is not subscriptable`. Fixed with `from __future__ import annotations`
   at the top of that file.
+- **Leave engine (Phase 3)**: full rules and assumptions are in
+  `docs/LEAVE.md` — overlap detection (checked again at approval time, not
+  just submission, to catch the race where a second pending request only
+  starts conflicting once the first one is approved), prorated balance
+  provisioning, minimum notice period, a team-coverage safeguard on
+  approval, and escalation of stale pending requests to a skip-level
+  manager. Auth doesn't exist yet, so `acting_manager_id` /
+  `actor_employee_id` are passed explicitly in request bodies as a
+  documented interim stand-in for real caller identity — Phase 6 will
+  remove them in favor of JWT-derived identity.
+- No scheduler exists yet for the escalation sweep; it's exposed as
+  `POST /api/leave-requests/escalate` for now (manual or external-cron
+  trigger) rather than adding a background-job dependency a phase early.
