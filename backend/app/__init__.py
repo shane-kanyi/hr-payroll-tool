@@ -51,6 +51,9 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.cli import register_cli_commands
     register_cli_commands(app)
 
+    from app.seed import register_seed_command
+    register_seed_command(app)
+
     _register_error_handlers(app)
 
     return app

@@ -15,11 +15,11 @@ with a small system that captures real business logic.
 
 ## Status
 
-This repository is currently scaffolded. It includes:
-
-- Flask app factory structure
-- Docker + PostgreSQL wiring
-- `/api/health` endpoint that verifies both the application and DB connectivity
+All three core modules (employee records, leave management, payroll) plus
+authentication/RBAC and a working dashboard are complete and tested
+end-to-end, backed by a Flask app factory, Docker + PostgreSQL wiring, and
+an `/api/health` endpoint that verifies both the application and DB
+connectivity.
 
 Employee management is functional end-to-end: teams and employees CRUD,
 soft-delete (deactivate/reactivate), org hierarchy view, and two real
@@ -55,11 +55,25 @@ every previously-interim `acting_manager_id`/`employee_id`/
 trusted from the request body (Admins may still override it explicitly,
 e.g. to act on behalf of someone). The frontend gates behind a real login
 screen; the old "Acting as" selector survives only as an Admin-only
-override inside the Leave tab. 199 tests passing, 96% coverage on `app/`.
+override inside the Leave tab. 201 tests passing, 96% coverage on `app/`.
+
+**Stretch goals were deliberately skipped.** The brief lists ~17 of them
+(audit logs, PDF payslip export, OpenAPI docs, CI, dark mode, team
+analytics, etc.) and is explicit that they're a bonus, never a substitute
+for the core, and never a penalty to skip. Given how much of the core
+already required real business-rule work (leave's five safeguards,
+payroll's proration/tax engine, RBAC's identity-derivation model), the
+better use of time was finishing those thoroughly and verifying them
+end-to-end rather than adding breadth. `flask seed-demo` (see
+`backend/app/seed.py`) is the one exception worth naming — it was needed
+anyway to produce `database/dump.sql`, a required submission deliverable,
+so it earned its place independent of the stretch-goals discussion.
 
 See `docs/ERD.md` for the schema, `docs/API.md` for endpoint details,
 `docs/LEAVE.md` for the leave business rules, `docs/PAYROLL.md` for the
-payroll formula, and `docs/AUTH.md` for the RBAC matrix and identity model.
+payroll formula, `docs/AUTH.md` for the RBAC matrix and identity model,
+and `docs/DEPLOYMENT.md` for environment variables and a pre-production
+checklist.
 
 ## Requirements
 
@@ -81,6 +95,10 @@ docker compose up --build
   `ADMIN_EMAIL`/`ADMIN_PASSWORD` from `backend/.env` (defaults:
   `admin@example.com` / `ChangeMe123!` — **change this before deploying
   anywhere real**, see docs/AUTH.md).
+- Want sample data (teams, employees, leave requests, a finalized payroll
+  period) instead of an empty database? `docker compose exec backend flask
+  seed-demo` — or restore `database/dump.sql` directly (see
+  `database/README.md`).
 
 ## Quick start (local, no Docker)
 
@@ -92,8 +110,12 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 flask db upgrade
 flask create-admin --email admin@example.com --password "ChangeMe123!"
+flask seed-demo   # optional: sample teams/employees/leave/payroll data
 flask run
 ```
+
+Full environment variable reference and a pre-production checklist:
+`docs/DEPLOYMENT.md`.
 
 ## Running tests
 
@@ -121,6 +143,7 @@ hr-payroll-tool/
 │   │   ├── schemas/          # team, employee, leave, payroll, auth (marshmallow)
 │   │   ├── utils/            # errors.py, dates.py, tax.py, auth.py (RBAC decorators)
 │   │   ├── cli.py            # `flask create-admin` bootstrap command
+│   │   ├── seed.py           # `flask seed-demo` sample-data generator
 │   │   ├── __init__.py       # create_app() factory + error/JWT handlers
 │   │   ├── config.py
 │   │   └── extensions.py
@@ -137,7 +160,8 @@ hr-payroll-tool/
 │   │   ├── test_payroll_service.py
 │   │   ├── test_payroll_api.py
 │   │   ├── test_auth_service.py
-│   │   └── test_auth_api.py
+│   │   ├── test_auth_api.py
+│   │   └── test_seed.py
 │   ├── docker-entrypoint.sh  # migrate, then bootstrap admin, then exec gunicorn
 │   ├── wsgi.py
 │   ├── requirements.txt
@@ -156,6 +180,9 @@ hr-payroll-tool/
 │   │   └── main.js       # login/session bootstrap, tab routing, logout
 │   ├── index.html
 │   └── Dockerfile
+├── database/
+│   ├── dump.sql          # schema + sample data (see database/README.md)
+│   └── README.md
 ├── docker-compose.yml
 └── README.md
 ```
@@ -276,3 +303,17 @@ hr-payroll-tool/
   to the DB directly. `--if-not-exists` makes it safe to run unconditionally
   on every container start (see `docker-entrypoint.sh`), rather than
   needing a one-time manual step a fresh clone would have to know about.
+- **Deployment assets (Phase 9)**: `flask seed-demo` (`backend/app/seed.py`)
+  builds the sample dataset entirely through the same service layer the
+  API uses — every leave request still goes through overlap detection and
+  balance validation, the payroll period is still generated and finalized
+  through the real formula — rather than hand-inserted rows that could
+  silently drift out of sync with the rules in docs/LEAVE.md and
+  docs/PAYROLL.md as those evolve. `database/dump.sql` is that dataset's
+  `pg_dump` output, restore-tested against a throwaway database before
+  committing it (see `database/README.md`); the Admin account is
+  deliberately excluded from it so no bootstrap credential ends up baked
+  into a committed file. Also stripped `pg_dump` 16.x's
+  `\restrict`/`\unrestrict` marker lines from the committed dump — they're
+  a psql-client-version-specific safety feature, not schema or data, and a
+  client from a different Postgres release can choke on them.
