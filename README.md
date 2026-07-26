@@ -108,3 +108,7 @@ hr-payroll-tool/
   verifies actual DB reachability instead of only Flask availability.
 - PostgreSQL is used for tests from the start to avoid a false-green suite
   once leave overlap logic is implemented.
+- `flask db init` refuses to run if `migrations/` already has anything in
+  it — even just a `.gitkeep`. Hit this after cloning fresh; fix is
+  `rm -f migrations/.gitkeep` (or `rm -rf migrations/` if it's not empty
+  for some other reason) before re-running `flask db init`.

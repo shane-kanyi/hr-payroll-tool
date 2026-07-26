@@ -26,13 +26,11 @@ def create_app(config_name: str | None = None) -> Flask:
     jwt.init_app(app)
     cors.init_app(app, resources={r"/api/*": {"origins": "*"}})
 
+    from app import models
+    
     from app.api.health import health_bp
     app.register_blueprint(health_bp)
 
-    # Feature blueprints (employees, leave, payroll, auth, dashboard) are
-    # registered here in later phases as they're built, e.g.:
-    #   from app.api.employees import employees_bp
-    #   app.register_blueprint(employees_bp)
 
     return app
 
