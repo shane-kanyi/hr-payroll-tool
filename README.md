@@ -29,13 +29,20 @@ manager who still has active reports).
 Leave management is also functional end-to-end: submit/approve/reject/
 cancel, overlap detection, prorated balance provisioning and validation,
 minimum notice period, team-coverage safeguard on approval, and a
-pending-vs-escalated (skip-level manager) resolution path — plus the
-`get_unpaid_leave_days_for_period` helper the payroll engine will consume
-next phase. 106 tests passing, 96% coverage on `app/`. Payroll is next —
-no endpoints yet.
+pending-vs-escalated (skip-level manager) resolution path.
 
-See `docs/ERD.md` for the schema, `docs/API.md` for endpoint details, and
-`docs/LEAVE.md` for the leave business rules and assumptions.
+Payroll is functional end-to-end: generate a monthly run (draft, freely
+recomputable), finalize it (permanently locked, snapshotted), per-employee
+payslips with a full calculation breakdown, and a progressive tax + flat
+social-security scheme. Mid-month joiners/exits are prorated, unpaid leave
+(pulled directly from the leave engine) reduces taxable income, and salary
+near a tax-bracket boundary is handled correctly by marginal (not flat-rate)
+tax brackets. 145 tests passing, 97% coverage on `app/`. Dashboard UI is
+next — no frontend yet beyond the scaffold.
+
+See `docs/ERD.md` for the schema, `docs/API.md` for endpoint details,
+`docs/LEAVE.md` for the leave business rules, and `docs/PAYROLL.md` for the
+payroll formula and assumptions.
 
 ## Requirements
 
@@ -82,12 +89,12 @@ pytest
 hr-payroll-tool/
 ├── backend/
 │   ├── app/
-│   │   ├── api/              # health, teams, employees, leave blueprints
+│   │   ├── api/              # health, teams, employees, leave, payroll blueprints
 │   │   ├── models/           # team, employee, role, user, leave, payroll, audit_log
-│   │   ├── repositories/     # team, employee, leave_request, leave_balance
-│   │   ├── services/         # team_service, employee_service, leave_service (business rules)
-│   │   ├── schemas/          # team, employee, leave (marshmallow)
-│   │   ├── utils/            # errors.py (AppError hierarchy), dates.py (business-day math)
+│   │   ├── repositories/     # team, employee, leave_request, leave_balance, payroll_period, payroll_entry
+│   │   ├── services/         # team, employee, leave, payroll services (business rules)
+│   │   ├── schemas/          # team, employee, leave, payroll (marshmallow)
+│   │   ├── utils/            # errors.py, dates.py (business-day math), tax.py (progressive brackets)
 │   │   ├── __init__.py       # create_app() factory + error handlers
 │   │   ├── config.py
 │   │   └── extensions.py
@@ -99,7 +106,10 @@ hr-payroll-tool/
 │   │   ├── test_employee_service.py
 │   │   ├── test_employees_api.py
 │   │   ├── test_leave_service.py
-│   │   └── test_leave_api.py
+│   │   ├── test_leave_api.py
+│   │   ├── test_tax.py
+│   │   ├── test_payroll_service.py
+│   │   └── test_payroll_api.py
 │   ├── wsgi.py
 │   ├── requirements.txt
 │   └── Dockerfile
@@ -169,3 +179,13 @@ hr-payroll-tool/
 - No scheduler exists yet for the escalation sweep; it's exposed as
   `POST /api/leave-requests/escalate` for now (manual or external-cron
   trigger) rather than adding a background-job dependency a phase early.
+- **Payroll engine (Phase 4)**: full formula and edge cases are in
+  `docs/PAYROLL.md`. The two day-count bases are deliberately different —
+  mid-month join/exit proration uses calendar days (a flat salary "covers"
+  every day of the month), while unpaid-leave deduction uses working days
+  (leave only costs you a day you'd otherwise have worked) — worth reading
+  before it looks like a bug. Tax is marginal/progressive specifically so a
+  salary one dollar over a bracket boundary is never worse off than one
+  dollar under it; `test_no_cliff_at_bracket_boundary` in `test_tax.py`
+  demonstrates this directly. Needed zero new migrations — the Phase 1
+  `payroll_entries` columns already matched the calculation pipeline.

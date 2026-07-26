@@ -27,3 +27,9 @@ users (1) ──< audit_logs (actor_user_id, nullable)
   one-way flag, never cleared. See `docs/LEAVE.md` for the full escalation
   rule and why it exists alongside `decided_by_id`/`decided_at` rather than
   replacing them.
+- `payroll_entries` needed no schema changes in Phase 4 — the Phase 1
+  columns (`gross_salary`, `unpaid_leave_days`, `unpaid_leave_deduction`,
+  `taxable_income`, `tax_deduction`, `social_security_deduction`,
+  `net_salary`, `calculation_notes`) already matched the calculation
+  pipeline exactly once it was designed. See `docs/PAYROLL.md` for what
+  each column means and the order they're derived in.

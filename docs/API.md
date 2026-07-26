@@ -115,3 +115,28 @@ computed server-side (business days, inclusive) — not accepted as input.
   `team_size` / `available_after`.
 - Acting on a request that's already been decided → `409`.
 - Cancelling someone else's request, or a non-pending one → `403` / `409`.
+
+## Payroll
+
+Full formula, brackets, and edge-case handling: `docs/PAYROLL.md`.
+
+| Method | Path | Body | Notes |
+|---|---|---|---|
+| POST | `/api/payroll/generate` | `{"year": int, "month": int, "generated_by_id"?: int}` | Creates the period (draft) if new; recomputes all entries if still draft; `409` if already finalized |
+| POST | `/api/payroll/periods/<id>/finalize` | — | Locks the period; `409` if already finalized, `400` if it has no entries |
+| GET | `/api/payroll/periods` | — | Paginated, newest first. `page`, `per_page` |
+| GET | `/api/payroll/periods/<id>` | — | 404 if not found |
+| GET | `/api/payroll/periods/<id>/entries` | — | `?employee_id=` to filter to one employee |
+| GET | `/api/payroll/periods/<id>/entries/<employee_id>` | — | Single payslip; 404 if that employee has no entry in this period |
+| GET | `/api/payroll/employees/<employee_id>/entries` | — | All of one employee's payslips across every period (payroll history) |
+
+### Business-rule error responses worth knowing about
+
+- Regenerating a finalized period → `409` (historical payroll is
+  immutable — see docs/PAYROLL.md snapshot section).
+- Finalizing an already-finalized period → `409`.
+- Finalizing a period with zero entries (e.g. no eligible employees) →
+  `400`.
+- An employee deactivated entirely before a period started, or not yet
+  hired by the time it ends, simply has no entry for that period (not an
+  error — check for a 404 on the single-payslip endpoint).
