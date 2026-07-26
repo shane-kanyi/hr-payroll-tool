@@ -16,7 +16,7 @@ from app.utils.errors import ConflictError, ForbiddenError, NotFoundError, Valid
 # Leave types that draw down an allocated yearly balance. UNPAID is
 # deliberately excluded - it has no balance to exhaust, and instead
 # reduces the employee's pay for the period (see get_unpaid_leave_days_for_period,
-# consumed by the payroll engine in Phase 4).
+# consumed by the payroll engine).
 BALANCE_TRACKED_TYPES = (LeaveType.ANNUAL, LeaveType.SICK)
 
 
@@ -102,7 +102,7 @@ class LeaveService:
     ) -> Decimal:
         """Business days of APPROVED unpaid leave overlapping a payroll
         period, clipped to the period boundaries. Consumed by the payroll
-        engine (Phase 4) to compute unpaid-leave deductions."""
+        engine to compute unpaid-leave deductions."""
         requests = self.repo.list_approved_for_employee_in_range(
             employee_id, period_start, period_end, leave_type=LeaveType.UNPAID
         )
@@ -307,9 +307,9 @@ class LeaveService:
             allowed_ids.add(employee.manager.manager_id)
 
         if not allowed_ids:
-            # No manager anywhere in the chain to decide this. Since Phase 6,
-            # this is exactly what the Admin bypass_authorization override is
-            # for - a non-admin manager has no standing to decide an orphan
+            # No manager anywhere in the chain to decide this. This is
+            # exactly what the Admin bypass_authorization override is for -
+            # a non-admin manager has no standing to decide an orphan
             # employee's request, so this always raises for them.
             raise ForbiddenError(
                 "This employee has no manager on record, so only an Admin can "

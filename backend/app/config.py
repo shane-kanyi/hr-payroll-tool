@@ -17,10 +17,10 @@ class BaseConfig:
         minutes=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_MINUTES", "60"))
     )
 
-    # Payroll defaults - full rationale documented in docs/PAYROLL.md (Phase 4)
+    # Payroll defaults - full rationale documented in docs/PAYROLL.md
     SOCIAL_SECURITY_RATE = float(os.environ.get("SOCIAL_SECURITY_RATE", "0.06"))
 
-    # Leave engine defaults - full rationale documented in docs/LEAVE.md (Phase 3)
+    # Leave engine defaults - full rationale documented in docs/LEAVE.md
     ANNUAL_LEAVE_DAYS_PER_YEAR = float(os.environ.get("ANNUAL_LEAVE_DAYS_PER_YEAR", "21"))
     SICK_LEAVE_DAYS_PER_YEAR = float(os.environ.get("SICK_LEAVE_DAYS_PER_YEAR", "10"))
     LEAVE_MIN_NOTICE_BUSINESS_DAYS = int(os.environ.get("LEAVE_MIN_NOTICE_BUSINESS_DAYS", "3"))

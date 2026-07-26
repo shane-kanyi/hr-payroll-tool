@@ -21,20 +21,17 @@ users (1) ──< audit_logs (actor_user_id, nullable)
 - DB-level constraints only cover facts true of a single row in isolation
   (end_date >= start_date, non-negative salary). Rules needing other rows
   (leave overlap, balance sufficiency, self-approval) belong in the
-  service layer — Phase 3.
-- `leave_requests.escalated_at` (added in Phase 3, migration
-  `630b8660218e`) is nullable and set once by the escalation sweep; it's a
-  one-way flag, never cleared. See `docs/LEAVE.md` for the full escalation
-  rule and why it exists alongside `decided_by_id`/`decided_at` rather than
-  replacing them.
-- `payroll_entries` needed no schema changes in Phase 4 — the Phase 1
-  columns (`gross_salary`, `unpaid_leave_days`, `unpaid_leave_deduction`,
-  `taxable_income`, `tax_deduction`, `social_security_deduction`,
-  `net_salary`, `calculation_notes`) already matched the calculation
-  pipeline exactly once it was designed. See `docs/PAYROLL.md` for what
-  each column means and the order they're derived in.
-- `roles`/`users` (Phase 1 tables, first actually used in Phase 6) gained
-  one addition: a `CHECK (name IN ('admin','manager','employee'))`
+  service layer instead.
+- `leave_requests.escalated_at` (migration `630b8660218e`) is nullable and
+  set once by the escalation sweep; it's a one-way flag, never cleared.
+  See `docs/LEAVE.md` for the full escalation rule and why it exists
+  alongside `decided_by_id`/`decided_at` rather than replacing them.
+- `payroll_entries`'s columns (`gross_salary`, `unpaid_leave_days`,
+  `unpaid_leave_deduction`, `taxable_income`, `tax_deduction`,
+  `social_security_deduction`, `net_salary`, `calculation_notes`) match the
+  calculation pipeline exactly. See `docs/PAYROLL.md` for what each column
+  means and the order they're derived in.
+- `roles`/`users` carry a `CHECK (name IN ('admin','manager','employee'))`
   constraint on `roles.name` (migration `598c1b53ccb8`), enforced by hand
   since Alembic's autogenerate doesn't reliably detect `CHECK` constraint
   changes on an existing table. `users.employee_id` is nullable+unique —

@@ -90,11 +90,11 @@ answered.
 `escalated_at`. From that point, the requester's **skip-level manager**
 (their manager's manager) may also approve or reject it — the original
 manager keeps the ability to act too, since escalation is meant to add a
-safety net, not take away their authority. There's no scheduler wired up yet
-(no Celery/APScheduler in this phase), so the sweep is exposed as
+safety net, not take away their authority. There's no scheduler wired up
+(no Celery/APScheduler), so the sweep is exposed as
 `POST /api/leave-requests/escalate` to be triggered by an external cron, or
-manually. Phase 7 (stretch: notifications) is the natural place to wire this
-to an actual scheduled job and an email/Slack alert.
+manually. Wiring this to an actual scheduled job and an email/Slack alert
+would be the natural next step.
 
 ### 6. Manager self-approval
 
@@ -111,20 +111,17 @@ Two distinct failure modes, both handled:
   403. This is the literal "insufficient approval [authority]" case.
 - **No approver at all:** an employee with no manager anywhere in their
   chain (e.g. a standalone hire, or an org-chart gap) would otherwise have a
-  request that can *never* be legitimately decided. Since RBAC/admin roles
-  don't exist until Phase 6, the interim rule is: if there is no manager or
-  skip-level manager on record, **any active employee** may act as a
-  fallback decider. This is a deliberate, documented gap — Phase 6 will
-  narrow this to an `Admin`-role user instead of "anyone."
+  request that can *never* be legitimately decided by an ordinary manager.
+  Resolving it requires an Admin, via an explicit override — see
+  `docs/AUTH.md` for the full identity/authorization model.
 
-## Interim: identifying "who is approving" without auth (pre-Phase 6)
+## Identifying "who is approving"
 
-There is no authentication/session yet. Approve/reject/cancel calls take an
-explicit `acting_manager_id` / `actor_employee_id` in the request body as a
-stand-in for a real caller identity. **This is a known, temporary shape** —
-Phase 6 will derive the acting identity from the JWT instead of a
-client-supplied field, and these parameters will be removed from the
-request schemas.
+Approve/reject/cancel calls derive the acting identity from the logged-in
+user (`current_user().employee_id`) rather than trusting a client-supplied
+field — Admins are the one exception, and may pass an explicit
+`acting_manager_id` / `actor_employee_id` in the request body to act on
+behalf of someone else. Full detail in `docs/AUTH.md`.
 
 ## Cross-year requests
 
@@ -150,6 +147,6 @@ period_end)` returns the business days of **approved `UNPAID`** leave that
 overlap a given date range, clipping any request that straddles the range
 boundary (e.g. leave running Jun 29 – Jul 2 contributes 2 days to June's
 payroll period and 2 days to July's). This is the integration point the
-Phase 4 payroll engine calls to compute the unpaid-leave deduction — no
-separate "leave summary" table is needed; payroll reads directly from
+payroll engine calls to compute the unpaid-leave deduction — no separate
+"leave summary" table is needed; payroll reads directly from
 `leave_requests`.

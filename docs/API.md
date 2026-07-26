@@ -87,7 +87,7 @@ optional on update (partial patch semantics), required on create except
 
 ## Leave Requests
 
-Full rules and assumptions: `docs/LEAVE.md`. Since Phase 6, `employee_id`
+Full rules and assumptions: `docs/LEAVE.md`. `employee_id`
 (submit) / `acting_manager_id` (approve/reject) / `actor_employee_id`
 (cancel) are derived from the logged-in user and **not** read from the
 request body — except for Admins, who may still pass them explicitly to

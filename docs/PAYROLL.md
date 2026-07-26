@@ -1,9 +1,9 @@
 # Payroll: Formula & Assumptions
 
 This documents the exact calculation `PayrollService._calculate_entry`
-performs, per the brief's instruction to "pick a simple tax-bracket + flat
-social security scheme, document your formula/assumptions - no need to
-match a real country exactly."
+performs — a simple tax-bracket-plus-flat-social-security scheme, chosen
+deliberately over trying to match any real country's tax code exactly (see
+"Tax: simple progressive brackets" below for why).
 
 ## Pipeline, in order
 
@@ -51,9 +51,8 @@ all, rather than a zero-value row — the entries table only contains people
 who were actually owed something.
 
 This proration is applied **symmetrically** to joiners and to employees
-deactivated partway through the period. The brief only asks for
-mid-month-joiner handling explicitly, but leaving exits unprorated would
-silently overpay anyone deactivated mid-month — the same formula covers
+deactivated partway through the period — leaving exits unprorated would
+silently overpay anyone deactivated mid-month, so the same formula covers
 both without extra branching. A known gap: this uses `deactivated_at` as a
 proxy for "last worked day," which conflates "when HR clicked deactivate"
 with "when the person's employment actually ended." A real system would
@@ -73,8 +72,8 @@ mirrors common real-world payroll practice: a monthly salary "covers" every
 calendar day (weekends included) when someone joins or leaves, but a day of
 *unpaid leave* is only meaningful on a day the person would otherwise have
 worked, so its cost is measured against working days. `unpaid_leave_days`
-itself comes from `LeaveService.get_unpaid_leave_days_for_period` (Phase
-3), which counts business days of **approved** `UNPAID` leave overlapping
+itself comes from `LeaveService.get_unpaid_leave_days_for_period`, which
+counts business days of **approved** `UNPAID` leave overlapping
 the period, clipped to the period boundary — so a leave request spanning a
 period boundary (e.g. Jun 29 - Jul 2) is split correctly between June's and
 July's payroll runs.
@@ -106,7 +105,7 @@ of dollars. See `tests/test_tax.py::test_no_cliff_at_bracket_boundary` and
 
 These bracket values are illustrative constants, chosen to make the
 marginal-vs-cliff behavior easy to verify in tests with clean numbers —
-they don't correspond to any real country's tax code, per the brief.
+they're not meant to correspond to any real country's tax code.
 
 ## Social security: flat rate
 

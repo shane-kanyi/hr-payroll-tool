@@ -55,13 +55,12 @@ evaluation.
 
 ## Before deploying anywhere real (checklist)
 
-This project was built as a scoped coding exercise, not hardened for
-production. If it were going further, in rough priority order:
+This project isn't hardened for production as-is. Before that, in rough
+priority order:
 
 1. **Change `ADMIN_PASSWORD`, `SECRET_KEY`, `JWT_SECRET_KEY`.** All three
    ship with public, documented defaults, by design, for a zero-friction
-   local evaluation experience — none are safe to reuse anywhere reachable
-   by anyone else.
+   local setup — none are safe to reuse anywhere reachable by anyone else.
 2. **Restrict CORS.** `cors.init_app(app, resources={r"/api/*": {"origins": "*"}})`
    in `app/__init__.py` allows any origin. Fine for local dev against a
    same-machine frontend; should be pinned to the actual frontend origin
@@ -88,8 +87,8 @@ production. If it were going further, in rough priority order:
 
 ## CI
 
-No CI workflow is included — out of scope for this exercise (see the
-stretch-goals discussion in the top-level README). `pytest` (backend) and
-manual/Playwright-driven browser checks (frontend) are the two things a CI
-pipeline would run; both are documented above and in `backend/README`-style
-instructions in the top-level README's "Running tests" section.
+No CI workflow is included yet. `pytest` (backend) and manual/
+Playwright-driven browser checks (frontend) are the two things a CI
+pipeline would run; both are documented in the top-level README's
+"Running tests" section, so wiring either into GitHub Actions (or
+similar) would mostly be a matter of scripting exactly those commands.

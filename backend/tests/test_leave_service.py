@@ -255,7 +255,7 @@ def test_orphan_employee_with_no_manager_blocks_ordinary_approvers(db, emp_servi
     """An employee with no manager anywhere in the chain has no one with
     standing to decide their request - not even another employee picked at
     random. This is exactly what the Admin bypass_authorization override
-    (Phase 6 RBAC) exists to resolve; see the next test."""
+    exists to resolve; see the next test."""
     employee = emp_service.create_employee(_employee_data(name="No Manager"))
     bystander = emp_service.create_employee(_employee_data(name="Bystander"))
     request = _submit(leave_service, employee)

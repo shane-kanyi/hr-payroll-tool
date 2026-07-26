@@ -15,59 +15,47 @@ with a small system that captures real business logic.
 
 ## Status
 
-All three core modules (employee records, leave management, payroll) plus
-authentication/RBAC and a working dashboard are complete and tested
+All three core modules — employee records, leave management, and payroll —
+plus authentication/RBAC and a working dashboard are complete and tested
 end-to-end, backed by a Flask app factory, Docker + PostgreSQL wiring, and
 an `/api/health` endpoint that verifies both the application and DB
 connectivity.
 
-Employee management is functional end-to-end: teams and employees CRUD,
-soft-delete (deactivate/reactivate), org hierarchy view, and two real
-business-rule safeguards (circular reporting chains, deactivating a
-manager who still has active reports).
+**Employee management**: teams and employees CRUD, soft-delete
+(deactivate/reactivate), org hierarchy view, and two real business-rule
+safeguards (circular reporting chains, deactivating a manager who still
+has active reports).
 
-Leave management is also functional end-to-end: submit/approve/reject/
-cancel, overlap detection, prorated balance provisioning and validation,
-minimum notice period, team-coverage safeguard on approval, and a
-pending-vs-escalated (skip-level manager) resolution path.
+**Leave management**: submit/approve/reject/cancel, overlap detection,
+prorated balance provisioning and validation, minimum notice period,
+team-coverage safeguard on approval, and a pending-vs-escalated
+(skip-level manager) resolution path.
 
-Payroll is functional end-to-end: generate a monthly run (draft, freely
-recomputable), finalize it (permanently locked, snapshotted), per-employee
-payslips with a full calculation breakdown, and a progressive tax + flat
-social-security scheme. Mid-month joiners/exits are prorated, unpaid leave
-(pulled directly from the leave engine) reduces taxable income, and salary
-near a tax-bracket boundary is handled correctly by marginal (not flat-rate)
-tax brackets. 145 tests passing, 97% coverage on `app/`.
+**Payroll**: generate a monthly run (draft, freely recomputable), finalize
+it (permanently locked, snapshotted), per-employee payslips with a full
+calculation breakdown, and a progressive tax + flat social-security
+scheme. Mid-month joiners/exits are prorated, unpaid leave (pulled
+directly from the leave engine) reduces taxable income, and salary near a
+tax-bracket boundary is handled correctly by marginal (not flat-rate) tax
+brackets.
 
-The dashboard (plain HTML/CSS/vanilla JS, no build step, no framework) is
-functional end-to-end against all of the above: an Overview tab (pending
-approvals, who's out today, leave balances, recent payroll runs), an
-Employees tab (create/search/filter/deactivate/reactivate, org chart), a
-Leave tab (submit/approve/reject/cancel, balances, who's-out, manual
-escalation trigger), and a Payroll tab (generate/recompute/finalize, a
-per-employee entries table with an expandable tax-bracket breakdown per
-payslip).
+**Dashboard**: plain HTML/CSS/vanilla JS, no build step, no framework — an
+Overview tab (pending approvals, who's out today, leave balances, recent
+payroll runs), an Employees tab (create/search/filter/deactivate/
+reactivate, org chart), a Leave tab (submit/approve/reject/cancel,
+balances, who's-out, manual escalation trigger), and a Payroll tab
+(generate/recompute/finalize, a per-employee entries table with an
+expandable tax-bracket breakdown per payslip).
 
-Authentication and RBAC are now wired up end-to-end: JWT login, three
-roles (Admin/Manager/Employee) with a documented permission matrix, and
-every previously-interim `acting_manager_id`/`employee_id`/
-`actor_employee_id` field now derived from the logged-in user rather than
-trusted from the request body (Admins may still override it explicitly,
-e.g. to act on behalf of someone). The frontend gates behind a real login
-screen; the old "Acting as" selector survives only as an Admin-only
-override inside the Leave tab. 201 tests passing, 96% coverage on `app/`.
+**Authentication & RBAC**: JWT login, three roles (Admin/Manager/Employee)
+with a documented permission matrix, and identity (which employee is
+submitting/approving/cancelling) always derived from the logged-in user
+rather than trusted from the request body — Admins may still override it
+explicitly, e.g. to act on behalf of someone. The frontend gates behind a
+real login screen; the "Acting as" employee selector survives only as an
+Admin-only override inside the Leave tab.
 
-**Stretch goals were deliberately skipped.** The brief lists ~17 of them
-(audit logs, PDF payslip export, OpenAPI docs, CI, dark mode, team
-analytics, etc.) and is explicit that they're a bonus, never a substitute
-for the core, and never a penalty to skip. Given how much of the core
-already required real business-rule work (leave's five safeguards,
-payroll's proration/tax engine, RBAC's identity-derivation model), the
-better use of time was finishing those thoroughly and verifying them
-end-to-end rather than adding breadth. `flask seed-demo` (see
-`backend/app/seed.py`) is the one exception worth naming — it was needed
-anyway to produce `database/dump.sql`, a required submission deliverable,
-so it earned its place independent of the stretch-goals discussion.
+201 tests passing, 96% coverage on `app/`.
 
 See `docs/ERD.md` for the schema, `docs/API.md` for endpoint details,
 `docs/LEAVE.md` for the leave business rules, `docs/PAYROLL.md` for the
@@ -190,7 +178,10 @@ hr-payroll-tool/
 ## Architecture notes
 
 - **Service layer between API and DB**: keep blueprints thin with request
-  parsing, service invocation, and response serialization.
+  parsing, service invocation, and response serialization. Services never
+  touch HTTP concerns (auth, JWTs, roles) — they take plain parameters
+  like an employee id, so they can be exercised directly in tests and
+  reused unchanged as the API around them evolved.
 - **Repository layer**: encapsulate SQLAlchemy queries so services do not
   build database queries inline.
 - **App factory**: enable isolated testing with a `TestingConfig` instance
@@ -200,6 +191,8 @@ hr-payroll-tool/
 
 ## Notes
 
+### Health & testing setup
+
 - The health check executes `SELECT 1` against PostgreSQL, so the endpoint
   verifies actual DB reachability instead of only Flask availability.
 - PostgreSQL is used for tests from the start to avoid a false-green suite
@@ -208,6 +201,9 @@ hr-payroll-tool/
   it — even just a `.gitkeep`. Hit this after cloning fresh; fix is
   `rm -f migrations/.gitkeep` (or `rm -rf migrations/` if it's not empty
   for some other reason) before re-running `flask db init`.
+
+### Employee lifecycle
+
 - **Circular manager chains**: nothing in a spreadsheet stops someone
   setting Alice's manager to Bob and Bob's manager to Alice on two
   different rows. `EmployeeService._validate_manager` walks the proposed
@@ -231,89 +227,102 @@ hr-payroll-tool/
   in the same class body, crashing at import time with `'function' object
   is not subscriptable`. Fixed with `from __future__ import annotations`
   at the top of that file.
-- **Leave engine (Phase 3)**: full rules and assumptions are in
-  `docs/LEAVE.md` — overlap detection (checked again at approval time, not
-  just submission, to catch the race where a second pending request only
-  starts conflicting once the first one is approved), prorated balance
-  provisioning, minimum notice period, a team-coverage safeguard on
-  approval, and escalation of stale pending requests to a skip-level
-  manager. Auth doesn't exist yet, so `acting_manager_id` /
-  `actor_employee_id` are passed explicitly in request bodies as a
-  documented interim stand-in for real caller identity — Phase 6 will
-  remove them in favor of JWT-derived identity.
-- No scheduler exists yet for the escalation sweep; it's exposed as
-  `POST /api/leave-requests/escalate` for now (manual or external-cron
-  trigger) rather than adding a background-job dependency a phase early.
-- **Payroll engine (Phase 4)**: full formula and edge cases are in
-  `docs/PAYROLL.md`. The two day-count bases are deliberately different —
-  mid-month join/exit proration uses calendar days (a flat salary "covers"
-  every day of the month), while unpaid-leave deduction uses working days
-  (leave only costs you a day you'd otherwise have worked) — worth reading
-  before it looks like a bug. Tax is marginal/progressive specifically so a
-  salary one dollar over a bracket boundary is never worse off than one
-  dollar under it; `test_no_cliff_at_bracket_boundary` in `test_tax.py`
-  demonstrates this directly. Needed zero new migrations — the Phase 1
-  `payroll_entries` columns already matched the calculation pipeline.
-- **Dashboard UI (Phase 5)**: no framework, no build step, no bundler —
-  each JS file defines one global (`Api`, `Store`, `Dom`, `Format`,
-  `Employees`, `Leave`, `Payroll`, `Dashboard`, `Nav`) via an IIFE and
-  `<script>` load order in `index.html` is the only wiring. All
-  user-supplied free text (names, reasons, decision notes) goes through
-  `Dom.escapeHtml` before being interpolated into template-string HTML —
-  there's no framework auto-escaping innerHTML here, so this is
-  load-bearing against XSS, not decorative. (The header's original
-  "acting as" selector, this phase's stand-in for a logged-in identity,
-  was superseded in Phase 6 — see below.)
-- Caught a real bug by actually driving the dashboard in a browser
-  (Playwright, headless, against the dockerized stack) rather than just
-  reading the code: the employee-cache fetch requested `per_page: 200`,
-  but `EmployeeListQuerySchema` caps `per_page` at 100 — every dropdown
-  that needed the employee list (manager picker, "acting as" selector)
-  400'd unconditionally, on every load, regardless of how many employees
-  actually existed. Fixed in `main.js` and `employees.js`. A pure code
-  read would likely have missed this — the number "200" reads as fine
-  until it's checked against the schema's actual `validate.Range(max=100)`.
-- Also caught while doing that same browser test: `docker compose up`
-  brought up a backend with an empty schema — migrations were never run
-  automatically, so every API call 500'd until `flask db upgrade` was run
-  by hand inside the container. Fixed with `backend/docker-entrypoint.sh`
-  (runs `flask db upgrade` before `exec`'ing into gunicorn). One gotcha
-  worth knowing if you touch it: docker-compose bind-mounts `./backend`
-  over `/app` at runtime, so the image's `RUN chmod +x` at build time is
-  irrelevant — the executable bit has to exist on the **host** file, or
-  the container fails to start with "permission denied".
-- **Auth & RBAC (Phase 6)**: full matrix and identity model in
-  `docs/AUTH.md`. The headline design decision: the service layer
-  (`LeaveService`, `PayrollService`) is completely untouched — it never
-  learns about JWTs or roles, it just takes an employee id like it always
-  did. All identity derivation (who is this request acting as, and is an
-  override allowed) lives in the API layer, which is exactly where Phase
-  3/4 promised it would eventually go. `user_lookup_loader` re-fetches the
-  `User` row from the DB on every request rather than trusting JWT claims,
-  so deactivating an account revokes access on the very next request, not
-  just at token expiry — see
-  `test_deactivated_user_token_is_rejected_on_next_request`. Also
-  tightened a Phase 3 gap now that real RBAC exists: an orphan employee
-  (no manager on record) used to be approvable by "any active employee" as
-  a stopgap; that's now a hard `ForbiddenError` for everyone except an
-  Admin using the explicit `bypass_authorization` override.
-- Bootstrapping the first Admin account is a `flask create-admin` CLI
-  command, not an API endpoint — creating a user via the API requires
-  already being an Admin, so something has to break that cycle by writing
-  to the DB directly. `--if-not-exists` makes it safe to run unconditionally
-  on every container start (see `docker-entrypoint.sh`), rather than
-  needing a one-time manual step a fresh clone would have to know about.
-- **Deployment assets (Phase 9)**: `flask seed-demo` (`backend/app/seed.py`)
-  builds the sample dataset entirely through the same service layer the
-  API uses — every leave request still goes through overlap detection and
-  balance validation, the payroll period is still generated and finalized
-  through the real formula — rather than hand-inserted rows that could
-  silently drift out of sync with the rules in docs/LEAVE.md and
-  docs/PAYROLL.md as those evolve. `database/dump.sql` is that dataset's
-  `pg_dump` output, restore-tested against a throwaway database before
-  committing it (see `database/README.md`); the Admin account is
-  deliberately excluded from it so no bootstrap credential ends up baked
-  into a committed file. Also stripped `pg_dump` 16.x's
-  `\restrict`/`\unrestrict` marker lines from the committed dump — they're
-  a psql-client-version-specific safety feature, not schema or data, and a
-  client from a different Postgres release can choke on them.
+
+### Leave engine
+
+Full rules and assumptions are in `docs/LEAVE.md` — overlap detection
+(checked again at approval time, not just submission, to catch the race
+where a second pending request only starts conflicting once the first one
+is approved), prorated balance provisioning, minimum notice period, a
+team-coverage safeguard on approval, and escalation of stale pending
+requests to a skip-level manager. No scheduler exists for the escalation
+sweep; it's exposed as `POST /api/leave-requests/escalate` (manual or
+external-cron trigger) rather than adding a background-job dependency
+before it's needed.
+
+### Payroll engine
+
+Full formula and edge cases are in `docs/PAYROLL.md`. The two day-count
+bases are deliberately different — mid-month join/exit proration uses
+calendar days (a flat salary "covers" every day of the month), while
+unpaid-leave deduction uses working days (leave only costs you a day
+you'd otherwise have worked) — worth reading before it looks like a bug.
+Tax is marginal/progressive specifically so a salary one dollar over a
+bracket boundary is never worse off than one dollar under it;
+`test_no_cliff_at_bracket_boundary` in `test_tax.py` demonstrates this
+directly. Needed no schema changes beyond what the initial migration
+already had — the `payroll_entries` columns matched the calculation
+pipeline once it was designed.
+
+### Dashboard UI
+
+No framework, no build step, no bundler — each JS file defines one global
+(`Api`, `Store`, `Dom`, `Format`, `Employees`, `Leave`, `Payroll`,
+`Dashboard`, `Nav`) via an IIFE, and `<script>` load order in `index.html`
+is the only wiring. All user-supplied free text (names, reasons, decision
+notes) goes through `Dom.escapeHtml` before being interpolated into
+template-string HTML — there's no framework auto-escaping innerHTML here,
+so this is load-bearing against XSS, not decorative.
+
+Caught a real bug by actually driving the dashboard in a browser
+(Playwright, headless, against the dockerized stack) rather than just
+reading the code: the employee-cache fetch requested `per_page: 200`, but
+`EmployeeListQuerySchema` caps `per_page` at 100 — every dropdown that
+needed the employee list (manager picker, "acting as" selector) 400'd
+unconditionally, on every load, regardless of how many employees actually
+existed. Fixed in `main.js` and `employees.js`. A pure code read would
+likely have missed this — the number "200" reads as fine until it's
+checked against the schema's actual `validate.Range(max=100)`.
+
+Also caught while doing that same browser test: `docker compose up`
+brought up a backend with an empty schema — migrations were never run
+automatically, so every API call 500'd until `flask db upgrade` was run by
+hand inside the container. Fixed with `backend/docker-entrypoint.sh` (runs
+`flask db upgrade` before `exec`'ing into gunicorn). One gotcha worth
+knowing if you touch it: docker-compose bind-mounts `./backend` over
+`/app` at runtime, so the image's `RUN chmod +x` at build time is
+irrelevant — the executable bit has to exist on the **host** file, or the
+container fails to start with "permission denied".
+
+### Auth & RBAC
+
+Full matrix and identity model in `docs/AUTH.md`. The headline design
+decision: the service layer (`LeaveService`, `PayrollService`) never
+learns about JWTs or roles at all — it just takes an employee id like it
+always did. All identity derivation (who is this request acting as, and
+is an override allowed) lives in the API layer instead, keeping the
+boundary between "who is calling" and "what business rule applies" a hard
+line. `user_lookup_loader` re-fetches the `User` row from the DB on every
+request rather than trusting JWT claims, so deactivating an account
+revokes access on the very next request, not just at token expiry — see
+`test_deactivated_user_token_is_rejected_on_next_request`.
+
+One deliberate tightening: an orphan employee (no manager on record) used
+to be approvable by "any active employee" as a stopgap before real
+authorization existed. That's now a hard `ForbiddenError` for everyone
+except an Admin using the explicit `bypass_authorization` override — a
+real permission boundary instead of "whoever happens to click first."
+
+Bootstrapping the first Admin account is a `flask create-admin` CLI
+command, not an API endpoint — creating a user via the API requires
+already being an Admin, so something has to break that cycle by writing
+to the DB directly. `--if-not-exists` makes it safe to run unconditionally
+on every container start (see `docker-entrypoint.sh`), rather than
+needing a one-time manual step a fresh clone would have to know about.
+
+### Deployment & sample data
+
+`flask seed-demo` (`backend/app/seed.py`) builds the sample dataset
+entirely through the same service layer the API uses — every leave
+request still goes through overlap detection and balance validation, the
+payroll period is still generated and finalized through the real formula
+— rather than hand-inserted rows that could silently drift out of sync
+with the rules in docs/LEAVE.md and docs/PAYROLL.md as those evolve.
+`database/dump.sql` is that dataset's `pg_dump` output, restore-tested
+against a throwaway database before committing it (see
+`database/README.md`); the Admin account is deliberately excluded from it
+so no bootstrap credential ends up baked into a committed file. Also
+stripped `pg_dump` 16.x's `\restrict`/`\unrestrict` marker lines from the
+committed dump — they're a psql-client-version-specific safety feature,
+not schema or data, and a client from a different Postgres release can
+choke on them.
