@@ -37,8 +37,23 @@ payslips with a full calculation breakdown, and a progressive tax + flat
 social-security scheme. Mid-month joiners/exits are prorated, unpaid leave
 (pulled directly from the leave engine) reduces taxable income, and salary
 near a tax-bracket boundary is handled correctly by marginal (not flat-rate)
-tax brackets. 145 tests passing, 97% coverage on `app/`. Dashboard UI is
-next — no frontend yet beyond the scaffold.
+tax brackets. 145 tests passing, 97% coverage on `app/`.
+
+The dashboard (plain HTML/CSS/vanilla JS, no build step, no framework) is
+functional end-to-end against all of the above: an Overview tab (pending
+approvals, who's out today, leave balances, recent payroll runs), an
+Employees tab (create/search/filter/deactivate/reactivate, org chart), a
+Leave tab (submit/approve/reject/cancel, balances, who's-out, manual
+escalation trigger), and a Payroll tab (generate/recompute/finalize, a
+per-employee entries table with an expandable tax-bracket breakdown per
+payslip). Since authentication doesn't exist yet (Phase 6), the header has
+an "Acting as" employee selector standing in for a logged-in identity —
+see `docs/LEAVE.md` for why. Verified by driving it end-to-end in a real
+headless browser (Playwright) against the dockerized stack: employee
+creation → org chart → submit leave as one identity → approve as another →
+balance deduction → payroll generation → payslip breakdown → Overview
+reflecting all of it, with zero console errors and zero failed requests.
+Authentication/RBAC is next.
 
 See `docs/ERD.md` for the schema, `docs/API.md` for endpoint details,
 `docs/LEAVE.md` for the leave business rules, and `docs/PAYROLL.md` for the
@@ -114,8 +129,17 @@ hr-payroll-tool/
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/
-│   ├── css/
+│   ├── css/theme.css     # design tokens, cards, tables, badges, forms, empty/loading states
 │   ├── js/
+│   │   ├── api.js        # fetch wrapper + namespaced endpoint helpers
+│   │   ├── store.js      # "acting as" identity + employee cache, pub/sub
+│   │   ├── dom.js        # escapeHtml, loading/empty/error state renderers
+│   │   ├── format.js     # money/date/badge formatting
+│   │   ├── employees.js  # Employees tab: CRUD, org chart
+│   │   ├── leave.js      # Leave tab: submit/approve/reject/cancel, balances, who's-out
+│   │   ├── payroll.js    # Payroll tab: generate/finalize, entries + tax breakdown
+│   │   ├── dashboard.js  # Overview tab: read-only summary of the above
+│   │   └── main.js       # tab routing + bootstrap
 │   ├── index.html
 │   └── Dockerfile
 ├── docker-compose.yml
@@ -189,3 +213,33 @@ hr-payroll-tool/
   dollar under it; `test_no_cliff_at_bracket_boundary` in `test_tax.py`
   demonstrates this directly. Needed zero new migrations — the Phase 1
   `payroll_entries` columns already matched the calculation pipeline.
+- **Dashboard UI (Phase 5)**: no framework, no build step, no bundler —
+  each JS file defines one global (`Api`, `Store`, `Dom`, `Format`,
+  `Employees`, `Leave`, `Payroll`, `Dashboard`, `Nav`) via an IIFE and
+  `<script>` load order in `index.html` is the only wiring. The "acting as"
+  selector in the header (`Store`, backed by `localStorage`) is the
+  frontend's stand-in for a logged-in identity until Phase 6 — every
+  action that needs to know "who is doing this" (submit leave, approve/
+  reject, cancel, view balances) reads it from there instead of asking per
+  form. All user-supplied free text (names, reasons, decision notes) goes
+  through `Dom.escapeHtml` before being interpolated into template-string
+  HTML — there's no framework auto-escaping innerHTML here, so this is
+  load-bearing against XSS, not decorative.
+- Caught a real bug by actually driving the dashboard in a browser
+  (Playwright, headless, against the dockerized stack) rather than just
+  reading the code: the employee-cache fetch requested `per_page: 200`,
+  but `EmployeeListQuerySchema` caps `per_page` at 100 — every dropdown
+  that needed the employee list (manager picker, "acting as" selector)
+  400'd unconditionally, on every load, regardless of how many employees
+  actually existed. Fixed in `main.js` and `employees.js`. A pure code
+  read would likely have missed this — the number "200" reads as fine
+  until it's checked against the schema's actual `validate.Range(max=100)`.
+- Also caught while doing that same browser test: `docker compose up`
+  brought up a backend with an empty schema — migrations were never run
+  automatically, so every API call 500'd until `flask db upgrade` was run
+  by hand inside the container. Fixed with `backend/docker-entrypoint.sh`
+  (runs `flask db upgrade` before `exec`'ing into gunicorn). One gotcha
+  worth knowing if you touch it: docker-compose bind-mounts `./backend`
+  over `/app` at runtime, so the image's `RUN chmod +x` at build time is
+  irrelevant — the executable bit has to exist on the **host** file, or
+  the container fails to start with "permission denied".
