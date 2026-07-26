@@ -21,7 +21,13 @@ This repository is currently scaffolded. It includes:
 - Docker + PostgreSQL wiring
 - `/api/health` endpoint that verifies both the application and DB connectivity
 
-Domain logic for employees, leave, and payroll is not implemented yet.
+Employee management is functional end-to-end: teams and employees CRUD,
+soft-delete (deactivate/reactivate), org hierarchy view, and two real
+business-rule safeguards (circular reporting chains, deactivating a
+manager who still has active reports). 47 tests passing, 96% coverage on
+`app/`. Leave and payroll are next — no endpoints for either yet.
+
+See `docs/ERD.md` for the schema and `docs/API.md` for endpoint details.
 
 ## Requirements
 
@@ -68,17 +74,22 @@ pytest
 hr-payroll-tool/
 ├── backend/
 │   ├── app/
-│   │   ├── api/           # Flask blueprints (health.py so far)
-│   │   ├── models/        # empty, added when the schema is built
-│   │   ├── repositories/  # empty
-│   │   ├── services/      # empty
-│   │   ├── schemas/       # empty
-│   │   ├── utils/         # empty
-│   │   ├── init.py        # create_app() factory
+│   │   ├── api/              # health, teams, employees blueprints
+│   │   ├── models/           # team, employee, role, user, leave, payroll, audit_log
+│   │   ├── repositories/     # team_repository, employee_repository
+│   │   ├── services/         # team_service, employee_service (business rules)
+│   │   ├── schemas/          # team_schema, employee_schema (marshmallow)
+│   │   ├── utils/            # errors.py (AppError hierarchy)
+│   │   ├── __init__.py       # create_app() factory + error handlers
 │   │   ├── config.py
 │   │   └── extensions.py
-│   ├── migrations/        # empty, Alembic init pending
+│   ├── migrations/
+│   │   └── versions/
 │   ├── tests/
+│   │   ├── test_health.py
+│   │   ├── test_models.py
+│   │   ├── test_employee_service.py
+│   │   └── test_employees_api.py
 │   ├── wsgi.py
 │   ├── requirements.txt
 │   └── Dockerfile
@@ -112,3 +123,26 @@ hr-payroll-tool/
   it — even just a `.gitkeep`. Hit this after cloning fresh; fix is
   `rm -f migrations/.gitkeep` (or `rm -rf migrations/` if it's not empty
   for some other reason) before re-running `flask db init`.
+- **Circular manager chains**: nothing in a spreadsheet stops someone
+  setting Alice's manager to Bob and Bob's manager to Alice on two
+  different rows. `EmployeeService._validate_manager` walks the proposed
+  manager's chain upward on every create/update and rejects the change if
+  it would ever loop back to the employee being edited. Self-management
+  (`manager_id == employee_id`) is rejected as a special case of the same
+  check.
+- **Deactivating a manager**: refused if they still have active direct
+  reports, rather than silently leaving those reports pointing at a
+  now-inactive manager. The 409 response includes which reports are
+  blocking it (`blocking_reports: [id, ...]`) so the frontend can link
+  straight to them instead of just saying "no."
+- `is_active` is deliberately excluded from the employee update schema —
+  status changes only happen through `/deactivate` and `/reactivate`, so
+  there's one auditable code path per state transition instead of a
+  generic PUT quietly flipping it. marshmallow's default `unknown=RAISE`
+  enforces this for free: sending `is_active` in a PUT body fails the
+  whole request with 400 rather than being silently ignored.
+- Hit a real bug from naming a repository method `list()` — it shadowed
+  the builtin `list` for every `list[SomeType]` type hint written *later*
+  in the same class body, crashing at import time with `'function' object
+  is not subscriptable`. Fixed with `from __future__ import annotations`
+  at the top of that file.

@@ -31,6 +31,39 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.api.health import health_bp
     app.register_blueprint(health_bp)
 
+    from app.api.teams import teams_bp
+    app.register_blueprint(teams_bp)
+
+    from app.api.employees import employees_bp
+    app.register_blueprint(employees_bp)
+
+    _register_error_handlers(app)
+
+    return app
+
+
+def _register_error_handlers(app: Flask) -> None:
+    from flask import jsonify
+    from marshmallow import ValidationError as MarshmallowValidationError
+    from app.utils.errors import AppError
+
+    @app.errorhandler(AppError)
+    def handle_app_error(err: AppError):
+        return jsonify(err.to_dict()), err.status_code
+
+    @app.errorhandler(MarshmallowValidationError)
+    def handle_marshmallow_error(err: MarshmallowValidationError):
+        return jsonify(message="Validation failed", errors=err.messages), 400
+
+    @app.errorhandler(404)
+    def handle_404(err):
+        return jsonify(message="Resource not found"), 404
+
+    @app.errorhandler(500)
+    def handle_500(err):
+        app.logger.exception("Unhandled server error")
+        return jsonify(message="Internal server error"), 500
+
 
     return app
 
