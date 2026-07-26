@@ -1,13 +1,47 @@
 const Leave = (() => {
   let root = null;
 
+  function canApprove() {
+    return Store.isAdmin() || Store.isManager();
+  }
+
+  function adminOverrideHtml() {
+    if (!Store.isAdmin()) return "";
+    const options = Store.getEmployees()
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(
+        (e) =>
+          `<option value="${e.id}" ${e.id === Store.getActingAsId() ? "selected" : ""}>${Dom.escapeHtml(e.name)}</option>`
+      )
+      .join("");
+    return `
+      <div class="card">
+        <h3>Admin override</h3>
+        <p class="muted small">
+          As an Admin you can act on behalf of any employee below - submit,
+          cancel, or view balances/requests/approvals as them. Leave unset
+          to just browse read-only data like "who's on leave".
+        </p>
+        <div class="field">
+          <label>Acting as</label>
+          <select id="leave-admin-acting-as">
+            <option value="">— none selected —</option>
+            ${options}
+          </select>
+        </div>
+      </div>
+    `;
+  }
+
   function html() {
     const today = new Date().toISOString().slice(0, 10);
     return `
+      ${adminOverrideHtml()}
+
       <div class="grid-2">
         <div class="card">
           <h2>Submit leave request</h2>
-          <div id="leave-submit-identity-warning"></div>
           <form id="leave-submit-form">
             <div class="form-grid">
               <div class="field">
@@ -37,20 +71,24 @@ const Leave = (() => {
         </div>
 
         <div class="card">
-          <h2>My leave balances</h2>
+          <h2>Leave balances</h2>
           <div id="leave-balances"></div>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-header"><h2>My leave requests</h2></div>
+        <div class="card-header"><h2>Leave requests</h2></div>
         <div id="leave-my-requests"></div>
       </div>
 
-      <div class="card">
-        <div class="card-header"><h2>Pending approvals</h2></div>
-        <div id="leave-pending-approvals"></div>
-      </div>
+      ${
+        canApprove()
+          ? `<div class="card">
+              <div class="card-header"><h2>Pending approvals</h2></div>
+              <div id="leave-pending-approvals"></div>
+            </div>`
+          : ""
+      }
 
       <div class="card">
         <div class="card-header">
@@ -62,21 +100,25 @@ const Leave = (() => {
         <div id="leave-on-leave-list"></div>
       </div>
 
-      <div class="card">
-        <div class="card-header"><h2>Escalation sweep</h2></div>
-        <p class="muted small">
-          No scheduler is wired up yet (see docs/LEAVE.md) — run the sweep
-          manually to flag pending requests older than the configured
-          threshold so a skip-level manager can also act on them.
-        </p>
-        <button id="leave-escalate-btn" class="btn btn-secondary">Run escalation sweep now</button>
-        <div id="leave-escalate-result" class="small muted" style="margin-top:8px;"></div>
-      </div>
+      ${
+        Store.isAdmin()
+          ? `<div class="card">
+              <div class="card-header"><h2>Escalation sweep</h2></div>
+              <p class="muted small">
+                No scheduler is wired up yet (see docs/LEAVE.md) — run the sweep
+                manually to flag pending requests older than the configured
+                threshold so a skip-level manager can also act on them.
+              </p>
+              <button id="leave-escalate-btn" class="btn btn-secondary">Run escalation sweep now</button>
+              <div id="leave-escalate-result" class="small muted" style="margin-top:8px;"></div>
+            </div>`
+          : ""
+      }
     `;
   }
 
-  function requireActingAs(container, message) {
-    const id = Store.getActingAsId();
+  function requireTarget(container, message) {
+    const id = Store.effectiveEmployeeId();
     if (!id) {
       Dom.empty(container, message);
       return null;
@@ -123,7 +165,12 @@ const Leave = (() => {
 
   async function refreshBalances() {
     const container = Dom.qs("#leave-balances", root);
-    const employeeId = requireActingAs(container, "Select an employee in the header to see their leave balances.");
+    const employeeId = requireTarget(
+      container,
+      Store.isAdmin()
+        ? "Select an employee above to view their balances."
+        : "Your account isn't linked to an employee record - contact an admin."
+    );
     if (!employeeId) return;
 
     Dom.loading(container, "Loading balances…");
@@ -153,7 +200,12 @@ const Leave = (() => {
 
   async function refreshMyRequests() {
     const container = Dom.qs("#leave-my-requests", root);
-    const employeeId = requireActingAs(container, "Select an employee in the header to see their requests.");
+    const employeeId = requireTarget(
+      container,
+      Store.isAdmin()
+        ? "Select an employee above to view their leave requests."
+        : "Your account isn't linked to an employee record - contact an admin."
+    );
     if (!employeeId) return;
 
     Dom.loading(container, "Loading requests…");
@@ -167,16 +219,20 @@ const Leave = (() => {
   }
 
   async function refreshPendingApprovals() {
+    if (!canApprove()) return;
     const container = Dom.qs("#leave-pending-approvals", root);
-    const employeeId = requireActingAs(container, "Select an employee in the header to see requests they can approve.");
-    if (!employeeId) return;
+    const managerId = requireTarget(
+      container,
+      "Select an employee above to view the requests they can approve."
+    );
+    if (!managerId) return;
 
     Dom.loading(container, "Loading pending approvals…");
     try {
-      const { data } = await Api.leave.pendingApprovals(employeeId);
+      const { data } = await Api.leave.pendingApprovals(managerId);
       const tableHtml = requestsTableHtml(data, { showCancel: false, showDecision: true });
       container.innerHTML =
-        tableHtml || `<div class="empty-state">No pending approvals for this employee right now.</div>`;
+        tableHtml || `<div class="empty-state">No pending approvals right now.</div>`;
     } catch (err) {
       Dom.errorState(container, Dom.errorMessage(err));
     }
@@ -230,20 +286,22 @@ const Leave = (() => {
     const errorEl = Dom.qs("#leave-submit-error", root);
     errorEl.textContent = "";
 
-    const employeeId = Store.getActingAsId();
+    const employeeId = Store.effectiveEmployeeId();
     if (!employeeId) {
-      errorEl.textContent = "Select an employee in the header first.";
+      errorEl.textContent = Store.isAdmin()
+        ? "Select an employee above first."
+        : "Your account isn't linked to an employee record.";
       return;
     }
 
     const formData = new FormData(event.target);
     const payload = {
-      employee_id: employeeId,
       leave_type: formData.get("leave_type"),
       start_date: formData.get("start_date"),
       end_date: formData.get("end_date"),
       reason: formData.get("reason") || undefined,
     };
+    if (Store.isAdmin()) payload.employee_id = employeeId;
 
     try {
       await Api.leave.submit(payload);
@@ -259,7 +317,8 @@ const Leave = (() => {
     if (!btn) return;
     if (!confirm("Cancel this leave request?")) return;
     try {
-      await Api.leave.cancel(Number(btn.dataset.id), { actor_employee_id: Store.getActingAsId() });
+      const payload = Store.isAdmin() ? { actor_employee_id: Store.effectiveEmployeeId() } : {};
+      await Api.leave.cancel(Number(btn.dataset.id), payload);
       await Promise.all([refreshMyRequests(), refreshBalances()]);
     } catch (err) {
       alert(Dom.errorMessage(err));
@@ -274,11 +333,13 @@ const Leave = (() => {
     const notes = prompt(`Optional note for this ${action}:`) || undefined;
 
     try {
-      const actingManagerId = Store.getActingAsId();
+      const payload = Store.isAdmin()
+        ? { acting_manager_id: Store.effectiveEmployeeId(), notes }
+        : { notes };
       if (action === "approve") {
-        await Api.leave.approve(id, { acting_manager_id: actingManagerId, notes });
+        await Api.leave.approve(id, payload);
       } else if (action === "reject") {
-        await Api.leave.reject(id, { acting_manager_id: actingManagerId, notes });
+        await Api.leave.reject(id, payload);
       }
       await Promise.all([refreshPendingApprovals(), refreshOnLeave()]);
     } catch (err) {
@@ -304,9 +365,21 @@ const Leave = (() => {
 
     Dom.qs("#leave-submit-form", root).addEventListener("submit", onSubmitForm);
     Dom.qs("#leave-my-requests", root).addEventListener("click", onMyRequestsClick);
-    Dom.qs("#leave-pending-approvals", root).addEventListener("click", onPendingApprovalsClick);
     Dom.qs("#leave-on-date", root).addEventListener("change", refreshOnLeave);
-    Dom.qs("#leave-escalate-btn", root).addEventListener("click", onEscalateClick);
+
+    const pendingApprovalsEl = Dom.qs("#leave-pending-approvals", root);
+    if (pendingApprovalsEl) pendingApprovalsEl.addEventListener("click", onPendingApprovalsClick);
+
+    const escalateBtn = Dom.qs("#leave-escalate-btn", root);
+    if (escalateBtn) escalateBtn.addEventListener("click", onEscalateClick);
+
+    const adminSelect = Dom.qs("#leave-admin-acting-as", root);
+    if (adminSelect) {
+      adminSelect.addEventListener("change", (event) => {
+        Store.setActingAs(event.target.value || null);
+        refreshAll();
+      });
+    }
 
     await refreshAll();
   }

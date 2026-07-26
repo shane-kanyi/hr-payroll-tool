@@ -46,18 +46,20 @@ Employees tab (create/search/filter/deactivate/reactivate, org chart), a
 Leave tab (submit/approve/reject/cancel, balances, who's-out, manual
 escalation trigger), and a Payroll tab (generate/recompute/finalize, a
 per-employee entries table with an expandable tax-bracket breakdown per
-payslip). Since authentication doesn't exist yet (Phase 6), the header has
-an "Acting as" employee selector standing in for a logged-in identity —
-see `docs/LEAVE.md` for why. Verified by driving it end-to-end in a real
-headless browser (Playwright) against the dockerized stack: employee
-creation → org chart → submit leave as one identity → approve as another →
-balance deduction → payroll generation → payslip breakdown → Overview
-reflecting all of it, with zero console errors and zero failed requests.
-Authentication/RBAC is next.
+payslip).
+
+Authentication and RBAC are now wired up end-to-end: JWT login, three
+roles (Admin/Manager/Employee) with a documented permission matrix, and
+every previously-interim `acting_manager_id`/`employee_id`/
+`actor_employee_id` field now derived from the logged-in user rather than
+trusted from the request body (Admins may still override it explicitly,
+e.g. to act on behalf of someone). The frontend gates behind a real login
+screen; the old "Acting as" selector survives only as an Admin-only
+override inside the Leave tab. 199 tests passing, 96% coverage on `app/`.
 
 See `docs/ERD.md` for the schema, `docs/API.md` for endpoint details,
-`docs/LEAVE.md` for the leave business rules, and `docs/PAYROLL.md` for the
-payroll formula and assumptions.
+`docs/LEAVE.md` for the leave business rules, `docs/PAYROLL.md` for the
+payroll formula, and `docs/AUTH.md` for the RBAC matrix and identity model.
 
 ## Requirements
 
@@ -74,6 +76,11 @@ docker compose up --build
 
 - API: `http://localhost:5000/api/health`
 - Frontend: `http://localhost:8080`
+- Migrations and an admin account are applied/created automatically on
+  startup (`backend/docker-entrypoint.sh`). Log in with the
+  `ADMIN_EMAIL`/`ADMIN_PASSWORD` from `backend/.env` (defaults:
+  `admin@example.com` / `ChangeMe123!` — **change this before deploying
+  anywhere real**, see docs/AUTH.md).
 
 ## Quick start (local, no Docker)
 
@@ -83,6 +90,8 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
 cp .env.example .env
+flask db upgrade
+flask create-admin --email admin@example.com --password "ChangeMe123!"
 flask run
 ```
 
@@ -104,13 +113,15 @@ pytest
 hr-payroll-tool/
 ├── backend/
 │   ├── app/
-│   │   ├── api/              # health, teams, employees, leave, payroll blueprints
+│   │   ├── api/              # health, auth, teams, employees, leave, payroll blueprints
 │   │   ├── models/           # team, employee, role, user, leave, payroll, audit_log
-│   │   ├── repositories/     # team, employee, leave_request, leave_balance, payroll_period, payroll_entry
-│   │   ├── services/         # team, employee, leave, payroll services (business rules)
-│   │   ├── schemas/          # team, employee, leave, payroll (marshmallow)
-│   │   ├── utils/            # errors.py, dates.py (business-day math), tax.py (progressive brackets)
-│   │   ├── __init__.py       # create_app() factory + error handlers
+│   │   ├── repositories/     # team, employee, leave_request, leave_balance, payroll_period,
+│   │   │                     # payroll_entry, user, role
+│   │   ├── services/         # team, employee, leave, payroll, auth services (business rules)
+│   │   ├── schemas/          # team, employee, leave, payroll, auth (marshmallow)
+│   │   ├── utils/            # errors.py, dates.py, tax.py, auth.py (RBAC decorators)
+│   │   ├── cli.py            # `flask create-admin` bootstrap command
+│   │   ├── __init__.py       # create_app() factory + error/JWT handlers
 │   │   ├── config.py
 │   │   └── extensions.py
 │   ├── migrations/
@@ -124,22 +135,25 @@ hr-payroll-tool/
 │   │   ├── test_leave_api.py
 │   │   ├── test_tax.py
 │   │   ├── test_payroll_service.py
-│   │   └── test_payroll_api.py
+│   │   ├── test_payroll_api.py
+│   │   ├── test_auth_service.py
+│   │   └── test_auth_api.py
+│   ├── docker-entrypoint.sh  # migrate, then bootstrap admin, then exec gunicorn
 │   ├── wsgi.py
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/
-│   ├── css/theme.css     # design tokens, cards, tables, badges, forms, empty/loading states
+│   ├── css/theme.css     # design tokens, cards, tables, badges, forms, empty/loading states, login screen
 │   ├── js/
-│   │   ├── api.js        # fetch wrapper + namespaced endpoint helpers
-│   │   ├── store.js      # "acting as" identity + employee cache, pub/sub
+│   │   ├── api.js        # fetch wrapper + namespaced endpoint helpers + 401 hook
+│   │   ├── store.js      # currentUser, Admin-only "acting as" override, employee cache, pub/sub
 │   │   ├── dom.js        # escapeHtml, loading/empty/error state renderers
 │   │   ├── format.js     # money/date/badge formatting
-│   │   ├── employees.js  # Employees tab: CRUD, org chart
+│   │   ├── employees.js  # Employees tab: CRUD (Admin-gated), org chart
 │   │   ├── leave.js      # Leave tab: submit/approve/reject/cancel, balances, who's-out
-│   │   ├── payroll.js    # Payroll tab: generate/finalize, entries + tax breakdown
-│   │   ├── dashboard.js  # Overview tab: read-only summary of the above
-│   │   └── main.js       # tab routing + bootstrap
+│   │   ├── payroll.js    # Payroll tab: Admin full view, self-service payslips otherwise
+│   │   ├── dashboard.js  # Overview tab: role-aware summary of the above
+│   │   └── main.js       # login/session bootstrap, tab routing, logout
 │   ├── index.html
 │   └── Dockerfile
 ├── docker-compose.yml
@@ -216,15 +230,13 @@ hr-payroll-tool/
 - **Dashboard UI (Phase 5)**: no framework, no build step, no bundler —
   each JS file defines one global (`Api`, `Store`, `Dom`, `Format`,
   `Employees`, `Leave`, `Payroll`, `Dashboard`, `Nav`) via an IIFE and
-  `<script>` load order in `index.html` is the only wiring. The "acting as"
-  selector in the header (`Store`, backed by `localStorage`) is the
-  frontend's stand-in for a logged-in identity until Phase 6 — every
-  action that needs to know "who is doing this" (submit leave, approve/
-  reject, cancel, view balances) reads it from there instead of asking per
-  form. All user-supplied free text (names, reasons, decision notes) goes
-  through `Dom.escapeHtml` before being interpolated into template-string
-  HTML — there's no framework auto-escaping innerHTML here, so this is
-  load-bearing against XSS, not decorative.
+  `<script>` load order in `index.html` is the only wiring. All
+  user-supplied free text (names, reasons, decision notes) goes through
+  `Dom.escapeHtml` before being interpolated into template-string HTML —
+  there's no framework auto-escaping innerHTML here, so this is
+  load-bearing against XSS, not decorative. (The header's original
+  "acting as" selector, this phase's stand-in for a logged-in identity,
+  was superseded in Phase 6 — see below.)
 - Caught a real bug by actually driving the dashboard in a browser
   (Playwright, headless, against the dockerized stack) rather than just
   reading the code: the employee-cache fetch requested `per_page: 200`,
@@ -243,3 +255,24 @@ hr-payroll-tool/
   over `/app` at runtime, so the image's `RUN chmod +x` at build time is
   irrelevant — the executable bit has to exist on the **host** file, or
   the container fails to start with "permission denied".
+- **Auth & RBAC (Phase 6)**: full matrix and identity model in
+  `docs/AUTH.md`. The headline design decision: the service layer
+  (`LeaveService`, `PayrollService`) is completely untouched — it never
+  learns about JWTs or roles, it just takes an employee id like it always
+  did. All identity derivation (who is this request acting as, and is an
+  override allowed) lives in the API layer, which is exactly where Phase
+  3/4 promised it would eventually go. `user_lookup_loader` re-fetches the
+  `User` row from the DB on every request rather than trusting JWT claims,
+  so deactivating an account revokes access on the very next request, not
+  just at token expiry — see
+  `test_deactivated_user_token_is_rejected_on_next_request`. Also
+  tightened a Phase 3 gap now that real RBAC exists: an orphan employee
+  (no manager on record) used to be approvable by "any active employee" as
+  a stopgap; that's now a hard `ForbiddenError` for everyone except an
+  Admin using the explicit `bypass_authorization` override.
+- Bootstrapping the first Admin account is a `flask create-admin` CLI
+  command, not an API endpoint — creating a user via the API requires
+  already being an Admin, so something has to break that cycle by writing
+  to the DB directly. `--if-not-exists` makes it safe to run unconditionally
+  on every container start (see `docker-entrypoint.sh`), rather than
+  needing a one-time manual step a fresh clone would have to know about.

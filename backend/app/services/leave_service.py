@@ -182,7 +182,12 @@ class LeaveService:
         return leave_request
 
     def cancel_leave_request(
-        self, request_id: int, actor_employee_id: int, *, now: datetime | None = None
+        self,
+        request_id: int,
+        actor_employee_id: int,
+        *,
+        bypass_ownership: bool = False,
+        now: datetime | None = None,
     ) -> LeaveRequest:
         leave_request = self.get_leave_request(request_id)
         if leave_request.status != LeaveStatus.PENDING:
@@ -190,7 +195,7 @@ class LeaveService:
                 f"Only pending requests can be cancelled (current status: "
                 f"{leave_request.status.value})"
             )
-        if actor_employee_id != leave_request.employee_id:
+        if not bypass_ownership and actor_employee_id != leave_request.employee_id:
             raise ForbiddenError("Only the requester can cancel their own leave request")
 
         leave_request.status = LeaveStatus.CANCELLED
@@ -205,10 +210,13 @@ class LeaveService:
         acting_manager_id: int,
         *,
         notes: str | None = None,
+        bypass_authorization: bool = False,
         now: datetime | None = None,
     ) -> LeaveRequest:
         now = now or _utcnow()
-        leave_request, employee = self._prepare_decision(request_id, acting_manager_id)
+        leave_request, employee = self._prepare_decision(
+            request_id, acting_manager_id, bypass_authorization=bypass_authorization
+        )
 
         still_overlapping = self.repo.list_overlapping_for_employee(
             employee.id,
@@ -250,10 +258,13 @@ class LeaveService:
         acting_manager_id: int,
         *,
         notes: str | None = None,
+        bypass_authorization: bool = False,
         now: datetime | None = None,
     ) -> LeaveRequest:
         now = now or _utcnow()
-        leave_request, _employee = self._prepare_decision(request_id, acting_manager_id)
+        leave_request, _employee = self._prepare_decision(
+            request_id, acting_manager_id, bypass_authorization=bypass_authorization
+        )
 
         leave_request.status = LeaveStatus.REJECTED
         leave_request.decided_by_id = acting_manager_id
@@ -263,7 +274,7 @@ class LeaveService:
         return leave_request
 
     def _prepare_decision(
-        self, request_id: int, acting_manager_id: int
+        self, request_id: int, acting_manager_id: int, *, bypass_authorization: bool = False
     ) -> tuple[LeaveRequest, Employee]:
         leave_request = self.get_leave_request(request_id)
         if leave_request.status != LeaveStatus.PENDING:
@@ -282,7 +293,8 @@ class LeaveService:
         if acting_manager_id == employee.id:
             raise ForbiddenError("A manager cannot approve or reject their own leave request")
 
-        self._authorize_decision(leave_request, employee, acting_manager_id)
+        if not bypass_authorization:
+            self._authorize_decision(leave_request, employee, acting_manager_id)
         return leave_request, employee
 
     def _authorize_decision(
@@ -295,11 +307,14 @@ class LeaveService:
             allowed_ids.add(employee.manager.manager_id)
 
         if not allowed_ids:
-            # No manager anywhere in the chain to decide this - a request would
-            # otherwise be permanently stuck ("insufficient approval handling").
-            # Until RBAC (Phase 6) exists to restrict this to Admin-role users,
-            # any active employee may act as a fallback approver here.
-            return
+            # No manager anywhere in the chain to decide this. Since Phase 6,
+            # this is exactly what the Admin bypass_authorization override is
+            # for - a non-admin manager has no standing to decide an orphan
+            # employee's request, so this always raises for them.
+            raise ForbiddenError(
+                "This employee has no manager on record, so only an Admin can "
+                "decide this request."
+            )
 
         if acting_manager_id not in allowed_ids:
             raise ForbiddenError(

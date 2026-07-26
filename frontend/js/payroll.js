@@ -2,7 +2,7 @@ const Payroll = (() => {
   let root = null;
   let selectedPeriodId = null;
 
-  function html() {
+  function adminHtml() {
     const now = new Date();
     return `
       <div class="grid-2">
@@ -56,6 +56,19 @@ const Payroll = (() => {
           </button>
         </div>
         <div id="payroll-entries-list"></div>
+      </div>
+    `;
+  }
+
+  function selfServiceHtml() {
+    return `
+      <div class="card">
+        <div class="card-header"><h2>My payslips</h2></div>
+        <p class="muted small">
+          Payroll summaries and generation are Admin-only. Here's your own
+          payslip history across every period you've been paid in.
+        </p>
+        <div id="payroll-my-entries"></div>
       </div>
     `;
   }
@@ -118,16 +131,17 @@ const Payroll = (() => {
     `;
   }
 
-  function entriesTableHtml(entries) {
+  function entriesTableHtml(entries, { showEmployee = true, showDetailsToggle = true } = {}) {
     if (entries.length === 0) {
-      return `<div class="empty-state">No payroll entries for this period (no employees were eligible).</div>`;
+      return `<div class="empty-state">No payroll entries here yet.</div>`;
     }
     return `
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Employee</th><th>Gross</th><th>Unpaid days</th><th>Unpaid ded.</th>
+              ${showEmployee ? "<th>Employee</th>" : "<th>Period</th>"}
+              <th>Gross</th><th>Unpaid days</th><th>Unpaid ded.</th>
               <th>Taxable</th><th>Tax</th><th>Soc. security</th><th>Net</th><th></th>
             </tr>
           </thead>
@@ -135,8 +149,12 @@ const Payroll = (() => {
             ${entries
               .map(
                 (e) => `
-                <tr class="clickable" data-action="toggle-details" data-id="${e.id}">
-                  <td>${Dom.escapeHtml(e.employee?.name || "—")}</td>
+                <tr class="${showDetailsToggle ? "clickable" : ""}" data-action="toggle-details" data-id="${e.id}">
+                  <td>${
+                    showEmployee
+                      ? Dom.escapeHtml(e.employee?.name || "—")
+                      : `Period #${e.payroll_period_id}`
+                  }</td>
                   <td>${Format.money(e.gross_salary)}</td>
                   <td>${Format.days(e.unpaid_leave_days)}</td>
                   <td>${Format.money(e.unpaid_leave_deduction)}</td>
@@ -193,6 +211,22 @@ const Payroll = (() => {
     }
   }
 
+  async function refreshMyEntries() {
+    const container = Dom.qs("#payroll-my-entries", root);
+    const employeeId = Store.getCurrentUser()?.employee?.id;
+    if (!employeeId) {
+      Dom.empty(container, "Your account isn't linked to an employee record - contact an admin.");
+      return;
+    }
+    Dom.loading(container, "Loading your payslips…");
+    try {
+      const { data } = await Api.payroll.employeeEntries(employeeId);
+      container.innerHTML = entriesTableHtml(data, { showEmployee: false });
+    } catch (err) {
+      Dom.errorState(container, Dom.errorMessage(err));
+    }
+  }
+
   async function onSubmitGenerate(event) {
     event.preventDefault();
     const errorEl = Dom.qs("#payroll-generate-error", root);
@@ -202,7 +236,6 @@ const Payroll = (() => {
     const payload = {
       year: Number(formData.get("year")),
       month: Number(formData.get("month")),
-      generated_by_id: Store.getActingAsId() || undefined,
     };
 
     try {
@@ -242,8 +275,14 @@ const Payroll = (() => {
 
   async function render(container) {
     root = container;
-    root.innerHTML = html();
 
+    if (!Store.isAdmin()) {
+      root.innerHTML = selfServiceHtml();
+      await refreshMyEntries();
+      return;
+    }
+
+    root.innerHTML = adminHtml();
     Dom.qs("#payroll-generate-form", root).addEventListener("submit", onSubmitGenerate);
     Dom.qs("#payroll-periods-list", root).addEventListener("click", onPeriodsClick);
     Dom.qs("#payroll-entries-list", root).addEventListener("click", onEntriesClick);

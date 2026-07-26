@@ -10,7 +10,9 @@ class BaseConfig:
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-jwt-secret")
+    JWT_SECRET_KEY = os.environ.get(
+        "JWT_SECRET_KEY", "dev-jwt-secret-change-me-in-production-32ch"
+    )
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(
         minutes=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRES_MINUTES", "60"))
     )

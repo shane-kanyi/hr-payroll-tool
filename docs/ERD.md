@@ -33,3 +33,13 @@ users (1) ──< audit_logs (actor_user_id, nullable)
   `net_salary`, `calculation_notes`) already matched the calculation
   pipeline exactly once it was designed. See `docs/PAYROLL.md` for what
   each column means and the order they're derived in.
+- `roles`/`users` (Phase 1 tables, first actually used in Phase 6) gained
+  one addition: a `CHECK (name IN ('admin','manager','employee'))`
+  constraint on `roles.name` (migration `598c1b53ccb8`), enforced by hand
+  since Alembic's autogenerate doesn't reliably detect `CHECK` constraint
+  changes on an existing table. `users.employee_id` is nullable+unique —
+  nullable because a User account doesn't have to represent a real
+  employee (an ops-only Admin account, for instance), unique because an
+  Employee can have at most one login. See `docs/AUTH.md` for the RBAC
+  model and why identity derivation lives entirely in the API layer, never
+  the service layer.

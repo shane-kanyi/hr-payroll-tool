@@ -385,3 +385,23 @@ details.notes-toggle summary {
 @media (max-width: 640px) {
   th, td { white-space: normal; }
 }
+
+/* ---- login screen ------------------------------------------------------- */
+
+.login-screen:not([hidden]) {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--spacing) * 3);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 360px;
+}
+
+.login-card h1 {
+  font-size: 20px;
+  margin: 0 0 4px 0;
+}

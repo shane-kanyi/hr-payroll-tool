@@ -27,9 +27,14 @@ def create_app(config_name: str | None = None) -> Flask:
     cors.init_app(app, resources={r"/api/*": {"origins": "*"}})
 
     from app import models
-    
+
+    _register_jwt_callbacks(app)
+
     from app.api.health import health_bp
     app.register_blueprint(health_bp)
+
+    from app.api.auth import auth_bp
+    app.register_blueprint(auth_bp)
 
     from app.api.teams import teams_bp
     app.register_blueprint(teams_bp)
@@ -43,9 +48,42 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.api.payroll import payroll_bp
     app.register_blueprint(payroll_bp)
 
+    from app.cli import register_cli_commands
+    register_cli_commands(app)
+
     _register_error_handlers(app)
 
     return app
+
+
+def _register_jwt_callbacks(app: Flask) -> None:
+    from flask import jsonify
+
+    from app.extensions import db as _db
+    from app.models import User
+
+    @jwt.user_identity_loader
+    def user_identity_lookup(user):
+        return str(user.id) if isinstance(user, User) else str(user)
+
+    @jwt.user_lookup_loader
+    def user_lookup_callback(_jwt_header, jwt_data):
+        # Re-fetches the User row on every request (rather than trusting
+        # stale JWT claims) so a deactivated account loses access
+        # immediately instead of only once its token happens to expire.
+        return _db.session.get(User, int(jwt_data["sub"]))
+
+    @jwt.unauthorized_loader
+    def handle_missing_token(reason):
+        return jsonify(message=f"Authentication required: {reason}"), 401
+
+    @jwt.invalid_token_loader
+    def handle_invalid_token(reason):
+        return jsonify(message=f"Invalid authentication token: {reason}"), 401
+
+    @jwt.expired_token_loader
+    def handle_expired_token(_jwt_header, _jwt_payload):
+        return jsonify(message="Authentication token has expired"), 401
 
 
 def _register_error_handlers(app: Flask) -> None:

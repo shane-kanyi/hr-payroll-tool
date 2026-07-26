@@ -13,7 +13,8 @@ class _EmployeeRefSchema(Schema):
 class PayrollGenerateSchema(Schema):
     year = fields.Int(required=True, validate=validate.Range(min=2000, max=2100))
     month = fields.Int(required=True, validate=validate.Range(min=1, max=12))
-    generated_by_id = fields.Int(required=False, allow_none=True, load_default=None)
+    # generated_by_id is not client-supplied - it's always the logged-in
+    # Admin's linked employee id (may be None), set in app/api/payroll.py.
 
 
 class PayrollPeriodListQuerySchema(Schema):

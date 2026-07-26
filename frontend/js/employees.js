@@ -12,7 +12,11 @@ const Employees = (() => {
           <option value="false">Inactive only</option>
         </select>
         <select id="emp-filter-team"><option value="">All teams</option></select>
-        <button id="emp-new-btn" class="btn btn-primary" type="button">+ New employee</button>
+        ${
+          Store.isAdmin()
+            ? '<button id="emp-new-btn" class="btn btn-primary" type="button">+ New employee</button>'
+            : ""
+        }
       </div>
 
       <div id="emp-form-panel" class="card" hidden></div>
@@ -124,9 +128,11 @@ const Employees = (() => {
           <td>${statusBadge(e)}</td>
           <td class="actions">
             ${
-              e.is_active
-                ? `<button class="btn btn-danger btn-sm" data-action="deactivate" data-id="${e.id}">Deactivate</button>`
-                : `<button class="btn btn-success btn-sm" data-action="reactivate" data-id="${e.id}">Reactivate</button>`
+              !Store.isAdmin()
+                ? ""
+                : e.is_active
+                  ? `<button class="btn btn-danger btn-sm" data-action="deactivate" data-id="${e.id}">Deactivate</button>`
+                  : `<button class="btn btn-success btn-sm" data-action="reactivate" data-id="${e.id}">Reactivate</button>`
             }
           </td>
         </tr>`
@@ -283,7 +289,8 @@ const Employees = (() => {
     root = container;
     root.innerHTML = html();
 
-    Dom.qs("#emp-new-btn", root).addEventListener("click", openForm);
+    const newBtn = Dom.qs("#emp-new-btn", root);
+    if (newBtn) newBtn.addEventListener("click", openForm);
     Dom.qs("#emp-search", root).addEventListener("input", debounce(refreshTable, 300));
     Dom.qs("#emp-filter-active", root).addEventListener("change", refreshTable);
     Dom.qs("#emp-filter-team", root).addEventListener("change", refreshTable);

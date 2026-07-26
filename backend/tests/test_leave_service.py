@@ -251,15 +251,29 @@ def test_direct_manager_can_approve_request(db, emp_service, leave_service):
     assert approved.decision_notes == "enjoy!"
 
 
-def test_orphan_employee_with_no_manager_can_be_decided_by_anyone(db, emp_service, leave_service):
-    """Documented gap: without RBAC (Phase 6) there's no "admin" concept yet,
-    so an employee with no manager anywhere in the chain would otherwise have
-    a permanently stuck request. Any active employee may act as a fallback."""
+def test_orphan_employee_with_no_manager_blocks_ordinary_approvers(db, emp_service, leave_service):
+    """An employee with no manager anywhere in the chain has no one with
+    standing to decide their request - not even another employee picked at
+    random. This is exactly what the Admin bypass_authorization override
+    (Phase 6 RBAC) exists to resolve; see the next test."""
     employee = emp_service.create_employee(_employee_data(name="No Manager"))
-    fallback_approver = emp_service.create_employee(_employee_data(name="Fallback"))
+    bystander = emp_service.create_employee(_employee_data(name="Bystander"))
     request = _submit(leave_service, employee)
 
-    approved = leave_service.approve_leave_request(request.id, fallback_approver.id)
+    with pytest.raises(ForbiddenError):
+        leave_service.approve_leave_request(request.id, bystander.id)
+
+
+def test_admin_bypass_authorization_can_decide_orphan_employee_request(
+    db, emp_service, leave_service
+):
+    employee = emp_service.create_employee(_employee_data(name="No Manager"))
+    admin_employee = emp_service.create_employee(_employee_data(name="Admin Employee"))
+    request = _submit(leave_service, employee)
+
+    approved = leave_service.approve_leave_request(
+        request.id, admin_employee.id, bypass_authorization=True
+    )
     assert approved.status == LeaveStatus.APPROVED
 
 
@@ -397,6 +411,17 @@ def test_others_cannot_cancel_someone_elses_request(db, emp_service, leave_servi
 
     with pytest.raises(ForbiddenError):
         leave_service.cancel_leave_request(request.id, other.id)
+
+
+def test_admin_bypass_ownership_can_cancel_someone_elses_request(db, emp_service, leave_service):
+    employee = emp_service.create_employee(_employee_data())
+    admin_employee = emp_service.create_employee(_employee_data(name="Admin Employee"))
+    request = _submit(leave_service, employee)
+
+    cancelled = leave_service.cancel_leave_request(
+        request.id, admin_employee.id, bypass_ownership=True
+    )
+    assert cancelled.status == LeaveStatus.CANCELLED
 
 
 def test_cannot_cancel_already_decided_request(db, emp_service, leave_service):

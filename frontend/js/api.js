@@ -11,6 +11,11 @@ const Api = (() => {
     return `?${search.toString()}`;
   }
 
+  let unauthorizedHandler = null;
+  function onUnauthorized(fn) {
+    unauthorizedHandler = fn;
+  }
+
   async function request(path, options = {}) {
     const token = localStorage.getItem("access_token");
     const headers = {
@@ -22,6 +27,10 @@ const Api = (() => {
     const response = await fetch(`${BASE_URL}${path}`, { ...options, headers });
     const isJson = response.headers.get("content-type")?.includes("application/json");
     const body = isJson ? await response.json() : null;
+
+    if (response.status === 401 && unauthorizedHandler) {
+      unauthorizedHandler();
+    }
 
     if (!response.ok) {
       const message = body?.message || `Request failed with status ${response.status}`;
@@ -44,6 +53,16 @@ const Api = (() => {
     post,
     put,
     del,
+    onUnauthorized,
+
+    auth: {
+      login: (email, password) => post("/auth/login", { email, password }),
+      me: () => get("/auth/me"),
+      listUsers: () => get("/auth/users"),
+      createUser: (data) => post("/auth/users", data),
+      deactivateUser: (id) => post(`/auth/users/${id}/deactivate`),
+      reactivateUser: (id) => post(`/auth/users/${id}/reactivate`),
+    },
 
     teams: {
       list: () => get("/teams"),

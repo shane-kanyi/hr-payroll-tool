@@ -12,7 +12,10 @@ class _EmployeeRefSchema(Schema):
 
 
 class LeaveRequestCreateSchema(Schema):
-    employee_id = fields.Int(required=True)
+    # employee_id is optional: it's derived from the logged-in user by
+    # default and only honored as an explicit override for Admins (e.g. HR
+    # entering leave on someone's behalf). See app/api/leave.py.
+    employee_id = fields.Int(required=False, allow_none=True, load_default=None)
     leave_type = fields.Str(required=True, validate=validate.OneOf(_LEAVE_TYPE_VALUES))
     start_date = fields.Date(required=True)
     end_date = fields.Date(required=True)
@@ -20,12 +23,14 @@ class LeaveRequestCreateSchema(Schema):
 
 
 class LeaveDecisionSchema(Schema):
-    acting_manager_id = fields.Int(required=True)
+    # acting_manager_id is likewise Admin-override-only; a Manager always
+    # acts as themselves, derived from their logged-in identity.
+    acting_manager_id = fields.Int(required=False, allow_none=True, load_default=None)
     notes = fields.Str(required=False, allow_none=True, validate=validate.Length(max=2000))
 
 
 class LeaveCancelSchema(Schema):
-    actor_employee_id = fields.Int(required=True)
+    actor_employee_id = fields.Int(required=False, allow_none=True, load_default=None)
 
 
 class LeaveRequestSchema(Schema):

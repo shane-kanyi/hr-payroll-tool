@@ -2,8 +2,12 @@ const Store = (() => {
   const ACTING_AS_KEY = "hr_acting_as_employee_id";
 
   const state = {
+    currentUser: null, // { id, email, role, employee: {id, name} | null }
+    // Admin-only override: lets an Admin preview/act as a specific
+    // employee (e.g. to approve on their behalf) without logging out.
+    // Non-admins never see or use this.
     actingAsId: localStorage.getItem(ACTING_AS_KEY) || null,
-    employees: [], // all employees (active + inactive), cached for dropdowns
+    employees: [],
   };
 
   const subscribers = [];
@@ -14,6 +18,27 @@ const Store = (() => {
 
   function notify() {
     subscribers.forEach((fn) => fn(state));
+  }
+
+  function setCurrentUser(user) {
+    state.currentUser = user;
+    if (!user || user.role !== "admin") {
+      setActingAs(null);
+    } else {
+      notify();
+    }
+  }
+
+  function getCurrentUser() {
+    return state.currentUser;
+  }
+
+  function isAdmin() {
+    return state.currentUser?.role === "admin";
+  }
+
+  function isManager() {
+    return state.currentUser?.role === "manager";
   }
 
   function setActingAs(employeeId) {
@@ -30,32 +55,37 @@ const Store = (() => {
     return state.actingAsId ? Number(state.actingAsId) : null;
   }
 
-  function getActingAsEmployee() {
-    const id = getActingAsId();
-    return state.employees.find((e) => e.id === id) || null;
+  function effectiveEmployeeId() {
+    if (isAdmin() && getActingAsId()) return getActingAsId();
+    return state.currentUser?.employee?.id ?? null;
   }
 
   function setEmployees(list) {
     state.employees = list;
-    // If the previously acting-as employee no longer exists (fresh DB reset,
-    // etc.), fall back gracefully instead of leaving a dangling id selected.
-    if (state.actingAsId && !getActingAsEmployee()) {
-      setActingAs(list.length ? list[0].id : null);
-    } else {
-      notify();
-    }
+    notify();
   }
 
   function getEmployees() {
     return state.employees;
   }
 
+  function clear() {
+    state.currentUser = null;
+    state.employees = [];
+    setActingAs(null);
+  }
+
   return {
     subscribe,
+    setCurrentUser,
+    getCurrentUser,
+    isAdmin,
+    isManager,
     setActingAs,
     getActingAsId,
-    getActingAsEmployee,
+    effectiveEmployeeId,
     setEmployees,
     getEmployees,
+    clear,
   };
 })();

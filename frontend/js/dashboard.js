@@ -1,18 +1,26 @@
 const Dashboard = (() => {
   let root = null;
 
+  function canApprove() {
+    return Store.isAdmin() || Store.isManager();
+  }
+
   function html() {
     return `
       <div class="stat-row" id="dash-stats"></div>
 
       <div class="grid-2">
-        <div class="card">
-          <div class="card-header">
-            <h2>Pending approvals</h2>
-            <button class="btn btn-secondary btn-sm" data-goto="leave">Go to Leave</button>
-          </div>
-          <div id="dash-pending"></div>
-        </div>
+        ${
+          canApprove()
+            ? `<div class="card">
+                <div class="card-header">
+                  <h2>Pending approvals</h2>
+                  <button class="btn btn-secondary btn-sm" data-goto="leave">Go to Leave</button>
+                </div>
+                <div id="dash-pending"></div>
+              </div>`
+            : ""
+        }
 
         <div class="card">
           <div class="card-header">
@@ -34,7 +42,7 @@ const Dashboard = (() => {
 
         <div class="card">
           <div class="card-header">
-            <h2>Recent payroll runs</h2>
+            <h2>${Store.isAdmin() ? "Recent payroll runs" : "My recent payslips"}</h2>
             <button class="btn btn-secondary btn-sm" data-goto="payroll">Go to Payroll</button>
           </div>
           <div id="dash-payroll"></div>
@@ -50,39 +58,45 @@ const Dashboard = (() => {
   async function loadStats(pendingCount, onLeaveCount) {
     const container = Dom.qs("#dash-stats", root);
     let activeCount = "—";
-    let latestPeriodLabel = "None yet";
+    let latestPeriodLabel = "Admin only";
+
     try {
-      const [{ meta: employeeMeta }, { data: periods }] = await Promise.all([
-        Api.employees.list({ is_active: true, per_page: 1 }),
-        Api.payroll.periods({ per_page: 1 }),
-      ]);
+      const { meta: employeeMeta } = await Api.employees.list({ is_active: true, per_page: 1 });
       activeCount = employeeMeta.total;
-      if (periods.length > 0) {
-        const latest = periods[0];
-        latestPeriodLabel = `${Format.monthLabel(latest.year, latest.month)} (${latest.status})`;
-      }
     } catch (err) {
       console.error(err);
     }
 
-    container.innerHTML = [
-      statTile(pendingCount, "Pending approvals for this user"),
-      statTile(onLeaveCount, "People out today"),
-      statTile(activeCount, "Active employees"),
-      statTile(latestPeriodLabel, "Latest payroll period"),
-    ].join("");
+    if (Store.isAdmin()) {
+      try {
+        const { data: periods } = await Api.payroll.periods({ per_page: 1 });
+        latestPeriodLabel =
+          periods.length > 0
+            ? `${Format.monthLabel(periods[0].year, periods[0].month)} (${periods[0].status})`
+            : "None yet";
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    const tiles = [statTile(onLeaveCount, "People out today"), statTile(activeCount, "Active employees")];
+    if (canApprove()) tiles.unshift(statTile(pendingCount, "Pending approvals for this user"));
+    tiles.push(statTile(latestPeriodLabel, "Latest payroll period"));
+
+    container.innerHTML = tiles.join("");
   }
 
   async function loadPending() {
+    if (!canApprove()) return 0;
     const container = Dom.qs("#dash-pending", root);
-    const employeeId = Store.getActingAsId();
-    if (!employeeId) {
-      Dom.empty(container, "Select an employee in the header to see their pending approvals.");
+    const managerId = Store.effectiveEmployeeId();
+    if (!managerId) {
+      Dom.empty(container, "Your account isn't linked to an employee record.");
       return 0;
     }
     Dom.loading(container, "Loading…");
     try {
-      const { data } = await Api.leave.pendingApprovals(employeeId);
+      const { data } = await Api.leave.pendingApprovals(managerId);
       if (data.length === 0) {
         Dom.empty(container, "No pending approvals right now.");
         return 0;
@@ -145,9 +159,9 @@ const Dashboard = (() => {
 
   async function loadBalances() {
     const container = Dom.qs("#dash-balances", root);
-    const employeeId = Store.getActingAsId();
+    const employeeId = Store.getCurrentUser()?.employee?.id;
     if (!employeeId) {
-      Dom.empty(container, "Select an employee in the header to see their balances.");
+      Dom.empty(container, "Your account isn't linked to an employee record.");
       return;
     }
     Dom.loading(container, "Loading…");
@@ -178,6 +192,38 @@ const Dashboard = (() => {
   async function loadRecentPayroll() {
     const container = Dom.qs("#dash-payroll", root);
     Dom.loading(container, "Loading…");
+
+    if (!Store.isAdmin()) {
+      const employeeId = Store.getCurrentUser()?.employee?.id;
+      if (!employeeId) {
+        Dom.empty(container, "Your account isn't linked to an employee record.");
+        return;
+      }
+      try {
+        const { data } = await Api.payroll.employeeEntries(employeeId);
+        if (data.length === 0) {
+          Dom.empty(container, "No payslips yet.");
+          return;
+        }
+        container.innerHTML = `
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Net pay</th><th>Gross</th></tr></thead>
+              <tbody>
+                ${data
+                  .slice(0, 3)
+                  .map((e) => `<tr><td>${Format.money(e.net_salary)}</td><td>${Format.money(e.gross_salary)}</td></tr>`)
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      } catch (err) {
+        Dom.errorState(container, Dom.errorMessage(err));
+      }
+      return;
+    }
+
     try {
       const { data } = await Api.payroll.periods({ per_page: 3 });
       if (data.length === 0) {
