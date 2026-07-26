@@ -2,11 +2,21 @@ import os
 from datetime import timedelta
 
 
+def _normalize_database_url(url: str) -> str:
+    # Some hosting providers hand out connection strings starting with the
+    # older "postgres://" scheme; SQLAlchemy 1.4+ requires "postgresql://".
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    return url
+
+
 class BaseConfig:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "DATABASE_URL",
-        "postgresql+psycopg2://hr_user:hr_password@localhost:5432/hr_payroll",
+    SQLALCHEMY_DATABASE_URI = _normalize_database_url(
+        os.environ.get(
+            "DATABASE_URL",
+            "postgresql+psycopg2://hr_user:hr_password@localhost:5432/hr_payroll",
+        )
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 

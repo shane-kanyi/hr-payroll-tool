@@ -60,8 +60,9 @@ Admin-only override inside the Leave tab.
 See `docs/ERD.md` for the schema, `docs/API.md` for endpoint details,
 `docs/LEAVE.md` for the leave business rules, `docs/PAYROLL.md` for the
 payroll formula, `docs/AUTH.md` for the RBAC matrix and identity model,
-and `docs/DEPLOYMENT.md` for environment variables and a pre-production
-checklist.
+`docs/DEPLOYMENT.md` for environment variables and a pre-production
+checklist, and `docs/HOSTING.md` for putting a live instance up on a free
+hosting tier.
 
 ## Requirements
 
@@ -326,3 +327,17 @@ stripped `pg_dump` 16.x's `\restrict`/`\unrestrict` marker lines from the
 committed dump — they're a psql-client-version-specific safety feature,
 not schema or data, and a client from a different Postgres release can
 choke on them.
+
+### Single-service hosting
+
+The root-level `Dockerfile` (distinct from `backend/Dockerfile` and
+`frontend/Dockerfile`, which local docker-compose still uses unchanged)
+builds one image that serves both the API and the static dashboard from a
+single Flask process — no nginx, no second service, no CORS to configure.
+`app/frontend.py`'s `register_frontend()` only activates if
+`FRONTEND_DIST_DIR` points at a real directory, so it's a no-op locally
+and in every test; it only does anything inside that specific image,
+where the frontend is copied to `/static_frontend` at build time. The
+gunicorn bind address reads `$PORT` from the environment (defaulting to
+5000) since most free-tier PaaS hosts assign that dynamically rather than
+letting you pick a fixed port. Full walkthrough: `docs/HOSTING.md`.

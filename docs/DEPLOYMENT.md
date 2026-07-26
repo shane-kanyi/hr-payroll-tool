@@ -1,5 +1,9 @@
 # Deployment
 
+Looking to put a live, publicly-reachable instance up on a free hosting
+tier? See `docs/HOSTING.md` instead — this page covers running the app
+locally via docker-compose and general environment/production notes.
+
 ## Local / evaluation (docker-compose)
 
 ```bash
